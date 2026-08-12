@@ -29,5 +29,10 @@ test("renders development preview metadata", async () => {
     response.headers.get("content-type") ?? "",
     /^text\/html\b/i,
   );
-  assert.match(await response.text(), developmentPreviewMeta);
+  const html = await response.text();
+  assert.match(html, developmentPreviewMeta);
+  assert.match(html, /playwell-logo\.png/);
+  assert.match(html, /data-preview-key="competition-section"/);
+  assert.match(html, /다음에 보완할 점/);
+  assert.match(html, /누적된 포트폴리오 전체 페이지/);
 });

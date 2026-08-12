@@ -123,12 +123,12 @@ export const INITIAL_DATA: PortfolioData = {
   skillOther: "",
   awards: [{ ...EMPTY_AWARD }],
   projects: [{ ...EMPTY_PROJECT }],
-  theme: "다크 테마",
-  moods: ["미래적인", "기술적인", "깔끔한"],
+  theme: "라이트 테마",
+  moods: ["깔끔한", "학생다운", "친근한"],
   moodOther: "",
-  palette: "네온 블루 + 다크 네이비",
+  palette: "민트 + 네이비",
   customColors: "",
-  backgrounds: ["은은한 회로 패턴", "그라데이션"],
+  backgrounds: ["은은한 회로 패턴"],
   backgroundOther: "",
   competitionLayout: "타임라인",
   skillLayout: "아이콘 카드와 배지",
@@ -377,4 +377,3 @@ ${projectBlock(data.projects)}
 5. 메뉴 이동과 자세히 보기 동작을 클릭 가능한 프로토타입으로 연결해 주세요.
 6. 시각적으로 멋진 것뿐 아니라 처음 보는 사람도 학생의 경험과 성장 과정을 쉽게 이해할 수 있는 디자인을 우선해 주세요.`;
 }
-
