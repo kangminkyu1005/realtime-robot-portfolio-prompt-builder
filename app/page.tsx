@@ -1,0 +1,308 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BACKGROUND_OPTIONS,
+  EMPTY_AWARD,
+  EMPTY_COMPETITION,
+  EMPTY_PROJECT,
+  INITIAL_DATA,
+  MOOD_OPTIONS,
+  ROLE_OPTIONS,
+  SECTION_OPTIONS,
+  SKILL_OPTIONS,
+  STEPS,
+  createStitchPrompt,
+  stepComplete,
+} from "./workflow";
+import type { PortfolioData, Step } from "./workflow";
+
+const STORAGE_KEY = "robot-portfolio-prompt-builder-v1";
+const boardWidth = 1460;
+const boardHeight = 720;
+const cardWidth = 235;
+const cardHeight = 168;
+
+function uid(prefix: string) {
+  const values = new Uint32Array(2);
+  crypto.getRandomValues(values);
+  return `${prefix}-${values[0].toString(16)}${values[1].toString(16)}`;
+}
+
+function connectorPath(from: Step, to: Step) {
+  const x1 = from.x + cardWidth / 2;
+  const y1 = from.y + cardHeight / 2;
+  const x2 = to.x + cardWidth / 2;
+  const y2 = to.y + cardHeight / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return `M ${x1} ${y1} C ${x1 + dx * 0.45} ${y1}, ${x2 - dx * 0.45} ${y2}, ${x2} ${y2}`;
+  }
+  return `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.45}, ${x2} ${y2 - dy * 0.45}, ${x2} ${y2}`;
+}
+
+function ChoiceGroup({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <div className="input-block">
+      <span className="input-title">{label}<em>필수</em></span>
+      <div className="choice-pills" role="radiogroup" aria-label={label}>
+        {options.map((option) => (
+          <button key={option} type="button" role="radio" aria-checked={value === option} className={value === option ? "selected" : ""} onClick={() => onChange(option)}>{option}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MultiChoice({ label, values, options, other, onToggle, onOther, locked = [] }: {
+  label: string;
+  values: string[];
+  options: string[];
+  other: string;
+  onToggle: (value: string) => void;
+  onOther: (value: string) => void;
+  locked?: string[];
+}) {
+  return (
+    <div className="input-block wide">
+      <span className="input-title">{label}<em>복수 선택</em></span>
+      <div className="multi-pills">
+        {options.map((option) => {
+          const active = values.includes(option);
+          const isLocked = locked.includes(option);
+          return <button key={option} type="button" className={active ? "selected" : ""} onClick={() => !isLocked && onToggle(option)} aria-pressed={active}>{active ? "✓ " : ""}{option}{isLocked ? " · 필수" : ""}</button>;
+        })}
+      </div>
+      <input className="other-input" value={other} onChange={(event) => onOther(event.target.value)} placeholder="기타 항목이 있다면 직접 입력하세요." />
+    </div>
+  );
+}
+
+function TextInput({ label, value, onChange, placeholder, multiline = false, optional = false }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  multiline?: boolean;
+  optional?: boolean;
+}) {
+  return (
+    <label className="input-block">
+      <span className="input-title">{label}<em className={optional ? "optional" : ""}>{optional ? "선택" : "필수"}</em></span>
+      {multiline
+        ? <textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+        : <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />}
+    </label>
+  );
+}
+
+export default function Home() {
+  const [current, setCurrent] = useState(0);
+  const [data, setData] = useState<PortfolioData>(INITIAL_DATA);
+  const [hydrated, setHydrated] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("불러오는 중");
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const initialized = useRef(false);
+  const step = STEPS[current];
+  const completedCount = STEPS.slice(0, 9).filter((item) => stepComplete(item.number, data)).length;
+  const allComplete = completedCount === 9;
+  const prompt = useMemo(() => createStitchPrompt(data), [data]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as Partial<PortfolioData>;
+          setData({
+            ...INITIAL_DATA,
+            ...parsed,
+            competitions: parsed.competitions?.length ? parsed.competitions : INITIAL_DATA.competitions,
+            awards: parsed.awards?.length ? parsed.awards : INITIAL_DATA.awards,
+            projects: parsed.projects?.length ? parsed.projects : INITIAL_DATA.projects,
+          });
+        }
+      } catch {
+        // Ignore unavailable or malformed device-local data.
+      }
+      setHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        setSaveStatus("이 브라우저에 자동 저장됨");
+      } catch {
+        setSaveStatus("자동 저장을 사용할 수 없음");
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [data, hydrated]);
+
+  useEffect(() => {
+    const card = cardRefs.current[current];
+    if (!card) return;
+    card.scrollIntoView({ behavior: initialized.current ? "smooth" : "auto", block: "center", inline: "center" });
+    initialized.current = true;
+  }, [current]);
+
+  useEffect(() => {
+    if (!showPrompt) return;
+    const onKeyDown = (event: KeyboardEvent) => event.key === "Escape" && setShowPrompt(false);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showPrompt]);
+
+  const update = <K extends keyof PortfolioData>(key: K, value: PortfolioData[K]) => setData((previous) => ({ ...previous, [key]: value }));
+  const toggle = (key: "sections" | "skills" | "moods" | "backgrounds", value: string) => {
+    if (key === "sections" && value === "Competition Journey") return;
+    update(key, data[key].includes(value) ? data[key].filter((item) => item !== value) : [...data[key], value]);
+  };
+  const move = (direction: number) => setCurrent((value) => Math.min(STEPS.length - 1, Math.max(0, value + direction)));
+  const next = () => current === 9 ? allComplete && setShowPrompt(true) : stepComplete(step.number, data) && move(1);
+  const updateCompetition = (id: string, key: string, value: string | string[]) => update("competitions", data.competitions.map((item) => item.id === id ? { ...item, [key]: value } : item));
+  const updateAward = (id: string, key: string, value: string) => update("awards", data.awards.map((item) => item.id === id ? { ...item, [key]: value } : item));
+  const updateProject = (id: string, key: string, value: string) => update("projects", data.projects.map((item) => item.id === id ? { ...item, [key]: value } : item));
+
+  const reset = () => {
+    if (!window.confirm("작성한 내용을 모두 지울까요? 삭제한 내용은 되돌릴 수 없습니다.")) return;
+    setData(INITIAL_DATA);
+    window.localStorage.removeItem(STORAGE_KEY);
+    setCurrent(0);
+  };
+
+  const copyPrompt = async () => {
+    await navigator.clipboard.writeText(prompt);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  const renderStep = () => {
+    switch (step.number) {
+      case 1:
+        return <div className="form-grid">
+          <TextInput label="학생 이름" value={data.studentName} onChange={(value) => update("studentName", value)} placeholder="예: 강건형" />
+          <TextInput label="포트폴리오 이름" value={data.portfolioName} onChange={(value) => update("portfolioName", value)} placeholder="예: GunHyung's Robot Portfolio" />
+          <TextInput label="웹앱 로고 이름" value={data.logoName} onChange={(value) => update("logoName", value)} placeholder="예: GunHyung's Portfolio" />
+          <ChoiceGroup label="사용 언어" value={data.language} options={["한국어", "영어", "한국어와 영어 혼합"]} onChange={(value) => update("language", value)} />
+        </div>;
+      case 2:
+        return <div className="form-grid">
+          <TextInput label="웹앱의 목적" value={data.purpose} onChange={(value) => update("purpose", value)} placeholder="예: 로봇과 코딩 프로젝트를 통해 배우고 만든 결과물을 보여주는 포트폴리오" multiline />
+          <TextInput label="주요 사용자" value={data.audience} onChange={(value) => update("audience", value)} placeholder="예: 친구, 선생님, 대회 관계자와 가족" multiline />
+          <TextInput label="포트폴리오 소개" value={data.portfolioIntro} onChange={(value) => update("portfolioIntro", value)} placeholder="예: 결과뿐 아니라 시도하고 실패하며 개선한 성장 과정을 보여줍니다." multiline />
+          <ChoiceGroup label="입력 문구 처리" value={data.textPolicy} options={["입력한 문구를 그대로 사용", "맞춤법만 수정 허용", "자연스럽게 다듬기"]} onChange={(value) => update("textPolicy", value)} />
+        </div>;
+      case 3:
+        return <div className="form-grid single">
+          <MultiChoice label="포트폴리오에 표시할 영역" values={data.sections} options={SECTION_OPTIONS} other={data.sectionOther} onToggle={(value) => toggle("sections", value)} onOther={(value) => update("sectionOther", value)} locked={["Competition Journey"]} />
+          <div className="info-note"><b>자동 적용</b><span>선택한 영역만 메뉴와 본문에 포함되고, Competition Journey는 대회 성장 기록을 위해 항상 포함됩니다.</span></div>
+        </div>;
+      case 4:
+        return <div className="form-grid">
+          <TextInput label="첫 화면 제목" value={data.heroTitle} onChange={(value) => update("heroTitle", value)} placeholder="예: My Robot and Code Portfolio" />
+          <TextInput label="첫 화면 소개 문장" value={data.heroIntro} onChange={(value) => update("heroIntro", value)} placeholder="예: It's my journey with robots and code" />
+          <TextInput label="자기소개" value={data.bio} onChange={(value) => update("bio", value)} placeholder="나의 로봇·코딩 경험을 소개해 주세요." multiline />
+          <TextInput label="앞으로의 목표" value={data.goal} onChange={(value) => update("goal", value)} placeholder="앞으로 도전하고 싶은 프로젝트와 키우고 싶은 능력을 적어 주세요." multiline />
+        </div>;
+      case 5:
+        return <div className="record-list">
+          {data.competitions.map((competition, index) => <article className="record-card" key={competition.id}>
+            <header><div><span>COMPETITION {String(index + 1).padStart(2, "0")}</span><strong>대회 기록 {index + 1}</strong></div>{data.competitions.length > 1 && <button type="button" onClick={() => update("competitions", data.competitions.filter((item) => item.id !== competition.id))}>삭제</button>}</header>
+            <div className="record-fields">
+              <TextInput label="대회명" value={competition.name} onChange={(value) => updateCompetition(competition.id, "name", value)} placeholder="예: 2026 RoboCup Korea Open CoSpace U12" />
+              <TextInput label="팀명" value={competition.team} onChange={(value) => updateCompetition(competition.id, "team", value)} placeholder="예: K.F.C.NOVA" />
+              <MultiChoice label="자신의 역할" values={competition.roles} options={ROLE_OPTIONS} other={competition.roleOther} onToggle={(value) => updateCompetition(competition.id, "roles", competition.roles.includes(value) ? competition.roles.filter((role) => role !== value) : [...competition.roles, value])} onOther={(value) => updateCompetition(competition.id, "roleOther", value)} />
+              <TextInput label="잘한 점" value={competition.strengths} onChange={(value) => updateCompetition(competition.id, "strengths", value)} placeholder="이번 대회에서 잘했다고 생각하는 점을 적어 주세요." multiline />
+              <TextInput label="아쉬운 점 및 보완할 점" value={competition.improvements} onChange={(value) => updateCompetition(competition.id, "improvements", value)} placeholder="아쉬웠던 점과 다음 대회를 위해 개선할 방법을 적어 주세요." multiline />
+              <TextInput label="이번 대회 한줄평" value={competition.review} onChange={(value) => updateCompetition(competition.id, "review", value)} placeholder="예: 끝까지 포기하지 않고 팀과 함께 성장한 대회였다." />
+            </div>
+          </article>)}
+          <button type="button" className="add-record" onClick={() => update("competitions", [...data.competitions, { ...EMPTY_COMPETITION, id: uid("competition") }])}>＋ 다른 대회 기록 추가</button>
+        </div>;
+      case 6:
+        return <div className="split-editor">
+          <MultiChoice label="기술과 역량" values={data.skills} options={SKILL_OPTIONS} other={data.skillOther} onToggle={(value) => toggle("skills", value)} onOther={(value) => update("skillOther", value)} />
+          <div className="compact-records"><span className="input-title">수상 내역<em className="optional">선택</em></span>
+            {data.awards.map((award, index) => <div className="compact-row" key={award.id}>
+              <input value={award.competition} onChange={(event) => updateAward(award.id, "competition", event.target.value)} placeholder={`대회명 ${index + 1}`} />
+              <input value={award.result} onChange={(event) => updateAward(award.id, "result", event.target.value)} placeholder="예: 1st Place, Influencer Award" />
+              {data.awards.length > 1 && <button type="button" onClick={() => update("awards", data.awards.filter((item) => item.id !== award.id))}>×</button>}
+            </div>)}
+            <button type="button" className="small-add" onClick={() => update("awards", [...data.awards, { ...EMPTY_AWARD, id: uid("award") }])}>＋ 수상 내역 추가</button>
+          </div>
+        </div>;
+      case 7:
+        return <div className="record-list">
+          {data.projects.map((project, index) => <article className="record-card" key={project.id}>
+            <header><div><span>PROJECT {String(index + 1).padStart(2, "0")}</span><strong>프로젝트 {index + 1}</strong></div>{data.projects.length > 1 && <button type="button" onClick={() => update("projects", data.projects.filter((item) => item.id !== project.id))}>삭제</button>}</header>
+            <div className="record-fields project-fields">
+              <TextInput label="프로젝트 제목" value={project.title} onChange={(value) => updateProject(project.id, "title", value)} placeholder="예: Line Tracing Robot" />
+              <TextInput label="사용 기술" value={project.technologies} onChange={(value) => updateProject(project.id, "technologies", value)} placeholder="예: Color Sensor, Motor Control, Block Coding" />
+              <TextInput label="프로젝트 설명" value={project.description} onChange={(value) => updateProject(project.id, "description", value)} placeholder="무엇을 만들고 어떻게 작동하는지 설명해 주세요." multiline />
+              <TextInput label="이미지 방향" value={project.imageDirection} onChange={(value) => updateProject(project.id, "imageDirection", value)} placeholder="예: 검은 선을 따라가는 LEGO 로봇 사진 영역" optional />
+              <TextInput label="프로젝트 링크" value={project.link} onChange={(value) => updateProject(project.id, "link", value)} placeholder="GitHub, 웹앱 또는 영상 주소" optional />
+            </div>
+          </article>)}
+          <button type="button" className="add-record" onClick={() => update("projects", [...data.projects, { ...EMPTY_PROJECT, id: uid("project") }])}>＋ 다른 프로젝트 추가</button>
+        </div>;
+      case 8:
+        return <div className="form-grid design-grid">
+          <ChoiceGroup label="화면 테마" value={data.theme} options={["다크 테마", "라이트 테마", "시스템 설정에 따라 변경"]} onChange={(value) => update("theme", value)} />
+          <ChoiceGroup label="색상 조합" value={data.palette} options={["네온 블루 + 다크 네이비", "민트 + 네이비", "퍼플 + 블루", "레드 + 블랙", "직접 색상 입력"]} onChange={(value) => update("palette", value)} />
+          {data.palette === "직접 색상 입력" && <TextInput label="사용할 색상" value={data.customColors} onChange={(value) => update("customColors", value)} placeholder="예: #00C2FF, #071426, #FFFFFF" />}
+          <MultiChoice label="디자인 분위기" values={data.moods} options={MOOD_OPTIONS} other={data.moodOther} onToggle={(value) => toggle("moods", value)} onOther={(value) => update("moodOther", value)} />
+          <MultiChoice label="배경 효과" values={data.backgrounds} options={BACKGROUND_OPTIONS} other={data.backgroundOther} onToggle={(value) => toggle("backgrounds", value)} onOther={(value) => update("backgroundOther", value)} />
+        </div>;
+      case 9:
+        return <div className="form-grid layout-grid">
+          <ChoiceGroup label="대회 기록 표시" value={data.competitionLayout} options={["타임라인", "카드 그리드", "세로 목록"]} onChange={(value) => update("competitionLayout", value)} />
+          <ChoiceGroup label="Skills 표시" value={data.skillLayout} options={["아이콘 카드와 배지", "태그", "진행도 표시", "단순 목록"]} onChange={(value) => update("skillLayout", value)} />
+          <ChoiceGroup label="프로젝트 카드 배치" value={data.portfolioColumns} options={["데스크톱 2열 · 모바일 1열", "데스크톱 3열 · 모바일 1열", "데스크톱 4열 · 모바일 2열"]} onChange={(value) => update("portfolioColumns", value)} />
+          <ChoiceGroup label="자세히 보기 동작" value={data.projectAction} options={["상세 팝업 열기", "별도 페이지로 이동", "외부 링크 열기", "버튼 표시 안 함"]} onChange={(value) => update("projectAction", value)} />
+          <TextInput label="Footer 문구" value={data.footerText} onChange={(value) => update("footerText", value)} placeholder="예: © 2026 Minjun's Portfolio. All rights reserved." />
+          <TextInput label="이메일" value={data.email} onChange={(value) => update("email", value)} placeholder="표시할 이메일" optional />
+          <TextInput label="GitHub 주소" value={data.githubUrl} onChange={(value) => update("githubUrl", value)} placeholder="https://github.com/..." optional />
+          <TextInput label="포트폴리오 주소" value={data.portfolioUrl} onChange={(value) => update("portfolioUrl", value)} placeholder="https://..." optional />
+        </div>;
+      default:
+        return <div className="generate-summary">
+          <div className="summary-count"><b>{completedCount}</b><span>/ 9단계<br />작성 완료</span></div>
+          <div><strong>{allComplete ? "Stitch 프롬프트를 만들 준비가 됐어요!" : "아직 작성하지 않은 단계가 있어요."}</strong><p>{allComplete ? `${data.competitions.length}개의 대회 기록과 ${data.projects.length}개의 프로젝트를 포함해 프롬프트를 완성합니다.` : "완료하지 않은 카드를 선택해 필수 내용을 입력해 주세요."}</p></div>
+        </div>;
+    }
+  };
+
+  return (
+    <main className="app-shell">
+      <header className="topbar">
+        <div className="brand-row"><div className="logo-mark" aria-hidden="true"><span /><span /><span /></div><div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>로봇 포트폴리오 프롬프트 빌더</h1></div></div>
+        <div className="header-actions"><span className="save-pill"><span className="save-dot" />{saveStatus}</span><button type="button" className="reset-button" onClick={reset}>처음부터</button><div className="top-progress" aria-label={`9단계 중 ${completedCount}단계 완료`}><span className="progress-copy"><b>{completedCount}</b> / 9 작성</span><div className="progress-track"><span style={{ width: `${(completedCount / 9) * 100}%` }} /></div></div></div>
+      </header>
+
+      <section className="workspace" aria-label="로봇 포트폴리오 제작 단계 화이트보드">
+        <div className="board" style={{ width: boardWidth, height: boardHeight }}>
+          <div className="board-title"><span className="tape" /><p>나의 로봇 경험을 채우면 Stitch 디자인 프롬프트가 완성돼요!</p></div>
+          <svg className="connectors" width={boardWidth} height={boardHeight} viewBox={`0 0 ${boardWidth} ${boardHeight}`} aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{STEPS.slice(0, -1).map((item, index) => <path key={item.number} d={connectorPath(item, STEPS[index + 1])} className={`connector ${stepComplete(item.number, data) ? "complete" : index === current ? "active" : ""}`} markerEnd="url(#arrow)" />)}</svg>
+          {STEPS.map((item, index) => { const complete = stepComplete(item.number, data); return <button key={item.number} ref={(element) => { cardRefs.current[index] = element; }} type="button" className={`step-card ${item.color} ${index === current ? "selected" : ""} ${complete ? "completed" : ""}`} style={{ left: item.x, top: item.y }} onClick={() => setCurrent(index)} aria-current={index === current ? "step" : undefined} aria-label={`${item.number}단계 ${item.title}: ${complete ? "작성 완료" : "작성 필요"}`}><span className="pin" aria-hidden="true" /><span className="step-meta"><span className="step-number">STEP {String(item.number).padStart(2, "0")}</span><span className="phase">{item.phase}</span></span><span className="step-heading"><span className="step-icon" aria-hidden="true">{item.icon}</span><strong>{item.title}</strong></span><span className="step-summary">{item.summary}</span>{complete && <span className="complete-mark" aria-label="작성 완료">✓</span>}{index === current && <span className="current-label">지금 작성</span>}</button>; })}
+        </div>
+      </section>
+
+      <aside className={`focus-panel ${step.color}`} aria-live="polite">
+        <div className="panel-accent" />
+        <div className="panel-step"><span className="panel-icon" aria-hidden="true">{step.icon}</span><div><p>{step.phase} · STEP {String(step.number).padStart(2, "0")}</p><h2>{step.title}</h2><span className="step-tip">TIP. {step.tip}</span></div></div>
+        <div className="form-scroll">{renderStep()}</div>
+        <nav className="panel-nav" aria-label="단계 이동"><button type="button" onClick={() => move(-1)} disabled={current === 0}>← 이전</button><div className="dot-nav">{STEPS.map((item, index) => <button key={item.number} type="button" className={`${index === current ? "active" : ""} ${stepComplete(item.number, data) ? "done" : ""}`} onClick={() => setCurrent(index)} aria-label={`${item.number}단계로 이동`} />)}</div><button type="button" className="next-button" onClick={next} disabled={current < 9 ? !stepComplete(step.number, data) : !allComplete}>{current === 9 ? "프롬프트 만들기" : "저장하고 다음"} →</button>{current < 9 && !stepComplete(step.number, data) && <span className="nav-hint">필수 항목을 모두 작성하면 다음 단계로 이동할 수 있어요.</span>}</nav>
+      </aside>
+
+      {showPrompt && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowPrompt(false)}><section className="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title"><header className="modal-header"><div><span className="stitch-badge">✦ GOOGLE STITCH READY</span><h2 id="prompt-title">로봇 포트폴리오 프롬프트가 완성됐어요</h2><p>학생이 작성한 문구와 대회 성장 기록을 포함한 최종 디자인 명세입니다.</p></div><button type="button" className="close-button" onClick={() => setShowPrompt(false)} aria-label="프롬프트 창 닫기">×</button></header><pre className="prompt-output">{prompt}</pre><footer className="modal-actions"><span>작성 내용은 이 브라우저에만 저장되며 코드나 GitHub에는 포함되지 않습니다.</span><div><button type="button" className="copy-button" onClick={copyPrompt}>{copied ? "✓ 복사 완료" : "프롬프트 복사"}</button><a href="https://stitch.withgoogle.com/" target="_blank" rel="noreferrer">Google Stitch 열기 ↗</a></div></footer></section></div>}
+    </main>
+  );
+}
