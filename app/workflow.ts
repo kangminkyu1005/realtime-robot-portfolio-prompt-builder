@@ -226,7 +226,7 @@ export function projectComplete(item: Project) {
   return hasText(item.title) && hasText(item.description) && hasText(item.technologies);
 }
 
-export function stepComplete(stepNumber: number, data: PortfolioData) {
+export function stepComplete(stepNumber: number, data: PortfolioData): boolean {
   switch (stepNumber) {
     case 1:
       return hasText(data.studentName) && hasText(data.portfolioName) && hasText(data.logoName) && hasText(data.language);

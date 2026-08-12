@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BACKGROUND_OPTIONS,
   EMPTY_AWARD,
@@ -15,31 +15,15 @@ import {
   createStitchPrompt,
   stepComplete,
 } from "./workflow";
-import type { PortfolioData, Step } from "./workflow";
+import PortfolioPreview from "./portfolio-preview";
+import type { PortfolioData } from "./workflow";
 
 const STORAGE_KEY = "robot-portfolio-prompt-builder-v1";
-const boardWidth = 1460;
-const boardHeight = 720;
-const cardWidth = 235;
-const cardHeight = 168;
 
 function uid(prefix: string) {
   const values = new Uint32Array(2);
   crypto.getRandomValues(values);
   return `${prefix}-${values[0].toString(16)}${values[1].toString(16)}`;
-}
-
-function connectorPath(from: Step, to: Step) {
-  const x1 = from.x + cardWidth / 2;
-  const y1 = from.y + cardHeight / 2;
-  const x2 = to.x + cardWidth / 2;
-  const y2 = to.y + cardHeight / 2;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    return `M ${x1} ${y1} C ${x1 + dx * 0.45} ${y1}, ${x2 - dx * 0.45} ${y2}, ${x2} ${y2}`;
-  }
-  return `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.45}, ${x2} ${y2 - dy * 0.45}, ${x2} ${y2}`;
 }
 
 function ChoiceGroup({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
@@ -54,7 +38,6 @@ function ChoiceGroup({ label, value, options, onChange }: { label: string; value
     </div>
   );
 }
-
 function MultiChoice({ label, values, options, other, onToggle, onOther, locked = [] }: {
   label: string;
   values: string[];
@@ -104,8 +87,6 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState("불러오는 중");
   const [showPrompt, setShowPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
-  const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const initialized = useRef(false);
   const step = STEPS[current];
   const completedCount = STEPS.slice(0, 9).filter((item) => stepComplete(item.number, data)).length;
   const allComplete = completedCount === 9;
@@ -145,13 +126,6 @@ export default function Home() {
     }, 350);
     return () => window.clearTimeout(timer);
   }, [data, hydrated]);
-
-  useEffect(() => {
-    const card = cardRefs.current[current];
-    if (!card) return;
-    card.scrollIntoView({ behavior: initialized.current ? "smooth" : "auto", block: "center", inline: "center" });
-    initialized.current = true;
-  }, [current]);
 
   useEffect(() => {
     if (!showPrompt) return;
@@ -283,24 +257,42 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-row"><div className="logo-mark" aria-hidden="true"><span /><span /><span /></div><div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>로봇 포트폴리오 프롬프트 빌더</h1></div></div>
-        <div className="header-actions"><span className="save-pill"><span className="save-dot" />{saveStatus}</span><button type="button" className="reset-button" onClick={reset}>처음부터</button><div className="top-progress" aria-label={`9단계 중 ${completedCount}단계 완료`}><span className="progress-copy"><b>{completedCount}</b> / 9 작성</span><div className="progress-track"><span style={{ width: `${(completedCount / 9) * 100}%` }} /></div></div></div>
+        <div className="brand-row"><div className="logo-mark" aria-hidden="true"><span /><span /><span /></div><div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>프롬프트 빌더</h1></div></div>
+        <div className="header-center"><span>입력</span><i>→</i><b>실시간 포트폴리오 미리보기</b></div>
+        <div className="header-actions">
+          <span className="save-pill"><span className="save-dot" />{saveStatus}</span>
+          <button type="button" className="reset-button" onClick={reset}>처음부터</button>
+          <div className="top-progress" aria-label={`9단계 중 ${completedCount}단계 완료`}><span className="progress-copy"><b>{completedCount}</b> / 9 작성</span><div className="progress-track"><span style={{ width: `${(completedCount / 9) * 100}%` }} /></div></div>
+        </div>
       </header>
 
-      <section className="workspace" aria-label="로봇 포트폴리오 제작 단계 화이트보드">
-        <div className="board" style={{ width: boardWidth, height: boardHeight }}>
-          <div className="board-title"><span className="tape" /><p>나의 로봇 경험을 채우면 Stitch 디자인 프롬프트가 완성돼요!</p></div>
-          <svg className="connectors" width={boardWidth} height={boardHeight} viewBox={`0 0 ${boardWidth} ${boardHeight}`} aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{STEPS.slice(0, -1).map((item, index) => <path key={item.number} d={connectorPath(item, STEPS[index + 1])} className={`connector ${stepComplete(item.number, data) ? "complete" : index === current ? "active" : ""}`} markerEnd="url(#arrow)" />)}</svg>
-          {STEPS.map((item, index) => { const complete = stepComplete(item.number, data); return <button key={item.number} ref={(element) => { cardRefs.current[index] = element; }} type="button" className={`step-card ${item.color} ${index === current ? "selected" : ""} ${complete ? "completed" : ""}`} style={{ left: item.x, top: item.y }} onClick={() => setCurrent(index)} aria-current={index === current ? "step" : undefined} aria-label={`${item.number}단계 ${item.title}: ${complete ? "작성 완료" : "작성 필요"}`}><span className="pin" aria-hidden="true" /><span className="step-meta"><span className="step-number">STEP {String(item.number).padStart(2, "0")}</span><span className="phase">{item.phase}</span></span><span className="step-heading"><span className="step-icon" aria-hidden="true">{item.icon}</span><strong>{item.title}</strong></span><span className="step-summary">{item.summary}</span>{complete && <span className="complete-mark" aria-label="작성 완료">✓</span>}{index === current && <span className="current-label">지금 작성</span>}</button>; })}
-        </div>
-      </section>
+      <section className="split-workspace" aria-label="포트폴리오 프롬프트 작성 화면">
+        <aside className={`input-pane ${step.color}`} aria-live="polite">
+          <header className="input-pane-header">
+            <div className="step-title-row"><span className="panel-icon" aria-hidden="true">{step.icon}</span><div><p>{step.phase} · STEP {String(step.number).padStart(2, "0")}</p><h2>{step.title}</h2></div></div>
+            <span className={`step-state ${stepComplete(step.number, data) ? "complete" : ""}`}>{stepComplete(step.number, data) ? "✓ 작성 완료" : "작성 중"}</span>
+          </header>
 
-      <aside className={`focus-panel ${step.color}`} aria-live="polite">
-        <div className="panel-accent" />
-        <div className="panel-step"><span className="panel-icon" aria-hidden="true">{step.icon}</span><div><p>{step.phase} · STEP {String(step.number).padStart(2, "0")}</p><h2>{step.title}</h2><span className="step-tip">TIP. {step.tip}</span></div></div>
-        <div className="form-scroll">{renderStep()}</div>
-        <nav className="panel-nav" aria-label="단계 이동"><button type="button" onClick={() => move(-1)} disabled={current === 0}>← 이전</button><div className="dot-nav">{STEPS.map((item, index) => <button key={item.number} type="button" className={`${index === current ? "active" : ""} ${stepComplete(item.number, data) ? "done" : ""}`} onClick={() => setCurrent(index)} aria-label={`${item.number}단계로 이동`} />)}</div><button type="button" className="next-button" onClick={next} disabled={current < 9 ? !stepComplete(step.number, data) : !allComplete}>{current === 9 ? "프롬프트 만들기" : "저장하고 다음"} →</button>{current < 9 && !stepComplete(step.number, data) && <span className="nav-hint">필수 항목을 모두 작성하면 다음 단계로 이동할 수 있어요.</span>}</nav>
-      </aside>
+          <nav className="step-switcher" aria-label="작성 단계 바로가기">
+            {STEPS.map((item, index) => {
+              const complete = stepComplete(item.number, data);
+              return <button key={item.number} type="button" className={`${index === current ? "active" : ""} ${complete ? "done" : ""}`} onClick={() => setCurrent(index)} aria-current={index === current ? "step" : undefined} aria-label={`${item.number}단계 ${item.title}로 이동`}><span>{complete ? "✓" : item.number}</span><small>{item.phase}</small></button>;
+            })}
+          </nav>
+
+          <div className="step-tip"><b>TIP</b><span>{step.tip}</span></div>
+          <div className="form-scroll">{renderStep()}</div>
+
+          <nav className="panel-nav" aria-label="단계 이동">
+            <button type="button" onClick={() => move(-1)} disabled={current === 0}>← 이전 단계</button>
+            <span className="nav-position">{String(current + 1).padStart(2, "0")} <i>/</i> 10</span>
+            <button type="button" className="next-button" onClick={next} disabled={current < 9 ? !stepComplete(step.number, data) : !allComplete}>{current === 9 ? "최종 프롬프트 보기" : "저장하고 다음"} →</button>
+            {current < 9 && !stepComplete(step.number, data) && <span className="nav-hint">필수 항목을 입력하면 다음 단계로 이동할 수 있어요.</span>}
+          </nav>
+        </aside>
+
+        <PortfolioPreview data={data} currentStep={step.number} />
+      </section>
 
       {showPrompt && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowPrompt(false)}><section className="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title"><header className="modal-header"><div><span className="stitch-badge">✦ GOOGLE STITCH READY</span><h2 id="prompt-title">로봇 포트폴리오 프롬프트가 완성됐어요</h2><p>학생이 작성한 문구와 대회 성장 기록을 포함한 최종 디자인 명세입니다.</p></div><button type="button" className="close-button" onClick={() => setShowPrompt(false)} aria-label="프롬프트 창 닫기">×</button></header><pre className="prompt-output">{prompt}</pre><footer className="modal-actions"><span>작성 내용은 이 브라우저에만 저장되며 코드나 GitHub에는 포함되지 않습니다.</span><div><button type="button" className="copy-button" onClick={copyPrompt}>{copied ? "✓ 복사 완료" : "프롬프트 복사"}</button><a href="https://stitch.withgoogle.com/" target="_blank" rel="noreferrer">Google Stitch 열기 ↗</a></div></footer></section></div>}
     </main>
