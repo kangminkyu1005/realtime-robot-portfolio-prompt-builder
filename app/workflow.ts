@@ -126,7 +126,7 @@ export const INITIAL_DATA: PortfolioData = {
   awards: [{ ...EMPTY_AWARD }],
   projects: [{ ...EMPTY_PROJECT }],
   theme: "라이트 테마",
-  moods: ["깔끔한", "학생다운", "친근한"],
+  moods: ["밝은 학생형"],
   moodOther: "",
   palette: "민트 + 네이비",
   customColors: "",
@@ -182,15 +182,44 @@ export const SKILL_OPTIONS = [
 ];
 
 export const MOOD_OPTIONS = [
-  "미래적인",
-  "기술적인",
-  "깔끔한",
-  "학생다운",
-  "전문적인",
-  "역동적인",
-  "미니멀한",
-  "친근한",
+  "미래 기술형",
+  "밝은 학생형",
+  "깔끔 전문형",
+  "역동 프로젝트형",
 ];
+
+const LEGACY_MOOD_GROUPS: Record<string, string[]> = {
+  "미래 기술형": ["미래적인", "기술적인"],
+  "밝은 학생형": ["학생다운", "친근한"],
+  "깔끔 전문형": ["깔끔한", "전문적인", "미니멀한"],
+  "역동 프로젝트형": ["역동적인"],
+};
+
+const MOOD_KEYWORDS: Record<string, RegExp> = {
+  "미래 기술형": /미래|기술|사이버|네온|로봇|테크/i,
+  "밝은 학생형": /학생|친근|밝은|재미|귀여|놀이/i,
+  "깔끔 전문형": /깔끔|전문|미니멀|정돈|단정|심플/i,
+  "역동 프로젝트형": /역동|활동|움직|강렬|프로젝트/i,
+};
+
+export function resolveMoodPreset(values: string[] | undefined, other = "") {
+  const selected = values ?? [];
+  const existingPreset = selected.find((value) => MOOD_OPTIONS.includes(value));
+  if (existingPreset) return existingPreset;
+
+  let bestPreset = "밝은 학생형";
+  let bestScore = 0;
+  for (const preset of MOOD_OPTIONS) {
+    const legacyScore = LEGACY_MOOD_GROUPS[preset].filter((value) => selected.includes(value)).length;
+    const customScore = other.trim() && MOOD_KEYWORDS[preset].test(other) ? 1 : 0;
+    const score = legacyScore + customScore;
+    if (score > bestScore) {
+      bestPreset = preset;
+      bestScore = score;
+    }
+  }
+  return bestPreset;
+}
 
 export const BACKGROUND_OPTIONS = [
   "은은한 회로 패턴",
@@ -208,7 +237,7 @@ export const STEPS: Step[] = [
   { number: 5, phase: "대회", title: "대회 기록", summary: "역할과 성장 과정을 기록해요.", tip: "대회 결과보다 내가 한 일과 다음에 개선할 점이 중요해요.", icon: "🏁", color: "purple", x: 1175, y: 110 },
   { number: 6, phase: "역량", title: "기술과 수상", summary: "기술은 선택하고 수상은 추가해요.", tip: "기술은 여러 개 선택할 수 있고 목록에 없으면 직접 추가할 수 있어요.", icon: "🏆", color: "purple", x: 1175, y: 410 },
   { number: 7, phase: "프로젝트", title: "작품 추가", summary: "로봇 프로젝트를 카드로 정리해요.", tip: "무엇을 만들었는지와 어떤 기술을 사용했는지를 구체적으로 적어요.", icon: "🛠️", color: "blue", x: 895, y: 410 },
-  { number: 8, phase: "디자인", title: "스타일 선택", summary: "분위기·색상·배경을 골라요.", tip: "서로 어울리는 분위기와 색상을 2~3개 중심으로 선택하세요.", icon: "🎨", color: "blue", x: 615, y: 410 },
+  { number: 8, phase: "디자인", title: "스타일 선택", summary: "분위기·색상·배경을 골라요.", tip: "서로 겹치지 않는 대표 분위기 하나를 고르면 전체 디자인에 일관되게 적용돼요.", icon: "🎨", color: "blue", x: 615, y: 410 },
   { number: 9, phase: "레이아웃", title: "화면과 Footer", summary: "표시 방식과 마지막 문구를 정해요.", tip: "반응형·고정 메뉴·부드러운 이동은 자동으로 프롬프트에 포함돼요.", icon: "🖥️", color: "blue", x: 335, y: 410 },
   { number: 10, phase: "완성", title: "Stitch 프롬프트", summary: "입력 내용을 하나로 완성해요.", tip: "내용을 확인한 뒤 복사해 Google Stitch에 붙여넣으세요.", icon: "✨", color: "coral", x: 55, y: 410 },
 ];
@@ -290,7 +319,7 @@ export function createStitchPrompt(data: PortfolioData) {
     const level = Math.min(5, Math.max(1, Math.round(data.skillLevels?.[skill] ?? 3)));
     return `- ${skill}: ${level}/5단계`;
   }).join("\n");
-  const moods = joinWithOther(data.moods, data.moodOther);
+  const mood = resolveMoodPreset(data.moods, data.moodOther);
   const backgrounds = joinWithOther(data.backgrounds, data.backgroundOther);
   const palette = data.palette === "직접 색상 입력" ? data.customColors : data.palette;
   const textRule = data.textPolicy === "입력한 문구를 그대로 사용"
@@ -357,7 +386,7 @@ ${projectBlock(data.projects)}
 
 ## 9. 디자인 의도
 - 테마: ${data.theme}
-- 디자인 분위기: ${moods}
+- 디자인 분위기 프리셋: ${mood}
 - 색상: ${palette}
 - 배경 효과: ${backgrounds || "배경 효과 없음"}
 - 로봇, 코딩, 미래 기술과 창의적인 프로젝트의 느낌을 주되 너무 복잡하거나 어렵게 보이지 않게 해 주세요.

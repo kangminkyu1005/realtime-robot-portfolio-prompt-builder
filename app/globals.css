@@ -226,6 +226,12 @@ button { color: inherit; }
 .compact-row input { height: 38px; padding: 0 10px; }
 .compact-row button { width: 31px; border: 0; border-radius: 9px; background: #fff0eb; color: #ae5944; cursor: pointer; }
 .design-grid .input-block.wide { grid-column: 1 / -1; }
+.mood-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mood-preset-grid button { display: grid; min-width: 0; gap: 4px; padding: 11px 12px; border: 1.5px solid #d8dfdb; border-radius: 12px; background: #fff; color: #526159; text-align: left; cursor: pointer; transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+.mood-preset-grid button:hover { border-color: color-mix(in srgb, var(--step-accent) 65%, #d8dfdb); transform: translateY(-1px); }
+.mood-preset-grid button.selected { border-color: var(--pw-navy); background: color-mix(in srgb, var(--step-accent) 17%, white); box-shadow: inset 0 0 0 1px var(--pw-navy), 0 5px 14px color-mix(in srgb, var(--step-accent) 13%, transparent); }
+.mood-preset-grid strong { color: var(--pw-navy); font-size: 10px; }
+.mood-preset-grid small { overflow: hidden; color: var(--pw-muted); font-size: 8px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .skill-level-editor { padding: 12px; border: 1px solid rgba(37, 105, 192, .14); border-radius: 13px; background: #f4f8fd; }
 .skill-level-editor > p { margin: -1px 0 2px; color: var(--pw-muted); font-size: 9px; line-height: 1.45; }
 .skill-level-row { display: grid; grid-template-columns: minmax(105px, 1fr) auto 45px; align-items: center; gap: 9px; min-width: 0; padding: 8px 9px; border-radius: 10px; background: #fff; }
@@ -507,25 +513,37 @@ button { color: inherit; }
 .preview-footer div { display: flex; gap: 9px; }
 .preview-footer i { color: var(--preview-accent); font-style: normal; font-weight: 900; letter-spacing: .08em; }
 
-.mood-futuristic .portfolio-navigation { box-shadow: 0 1px 18px var(--preview-accent-soft); }
-.mood-futuristic .robot-visual { filter: drop-shadow(0 0 18px var(--preview-accent-soft)); }
-.mood-futuristic .page-section-heading > span { text-shadow: 0 0 12px var(--preview-accent); }
-.mood-technical .portfolio-page-section { background-image: linear-gradient(90deg, color-mix(in srgb, var(--preview-accent) 12%, transparent) 1px, transparent 1px); background-size: 112px 100%; }
-.mood-technical .page-section-heading > span, .mood-technical .student-chip, .mood-technical .project-copy > span { font-family: var(--font-geist-mono), monospace; }
-.mood-clean .journey-card, .mood-clean .about-story, .mood-clean .skill-item, .mood-clean .project-preview-grid article { box-shadow: none; }
-.mood-clean .portfolio-page-section { border-bottom-color: color-mix(in srgb, var(--canvas-muted) 10%, transparent); }
-.mood-student .page-section-heading::after { display: block; width: 34px; height: 7px; margin-top: 10px; border-radius: 3px; background: var(--preview-accent); box-shadow: 12px 0 0 var(--preview-secondary), 24px 0 0 var(--pw-yellow); content: ""; opacity: .82; }
-.mood-professional .page-section-heading h3 { letter-spacing: -.035em; }
-.mood-professional .journey-card, .mood-professional .about-story, .mood-professional .project-preview-grid article { border-color: color-mix(in srgb, var(--canvas-muted) 28%, transparent); }
-.mood-dynamic .orbit-one { animation: orbit-spin 9s linear infinite; }
-.mood-dynamic .orbit-two { animation: orbit-spin-reverse 12s linear infinite; }
-.mood-dynamic .project-preview-grid article:nth-child(even) { transform: translateY(7px); }
-.mood-dynamic .project-preview-grid article { transition: transform 220ms ease, box-shadow 220ms ease; }
-.mood-minimal .code-card, .mood-minimal .orbit-two, .mood-minimal .page-section-heading p { display: none; }
-.mood-minimal .journey-card, .mood-minimal .about-story, .mood-minimal .skill-item, .mood-minimal .project-preview-grid article { box-shadow: none; }
-.mood-friendly .journey-card, .mood-friendly .about-story, .mood-friendly .skill-item, .mood-friendly .project-preview-grid article, .mood-friendly .award-stack { border-radius: 18px; }
-.mood-friendly .hero-actions span { border-radius: 10px; }
-.mood-custom .portfolio-navigation { border-bottom-color: color-mix(in srgb, var(--preview-secondary) 45%, transparent); }
+.mood-future-tech .portfolio-navigation { border-bottom-color: color-mix(in srgb, var(--preview-accent) 38%, transparent); box-shadow: 0 1px 22px var(--preview-accent-soft); }
+.mood-future-tech .portfolio-page-section { background-image: linear-gradient(90deg, color-mix(in srgb, var(--preview-accent) 11%, transparent) 1px, transparent 1px); background-size: 112px 100%; }
+.mood-future-tech .page-section-heading > span, .mood-future-tech .student-chip, .mood-future-tech .project-copy > span { font-family: var(--font-geist-mono), monospace; }
+.mood-future-tech .page-section-heading > span { text-shadow: 0 0 12px var(--preview-accent); }
+.mood-future-tech .robot-visual { filter: drop-shadow(0 0 20px var(--preview-accent-soft)); }
+.mood-future-tech .orbit-one { animation: orbit-spin 15s linear infinite; }
+.mood-future-tech .journey-card, .mood-future-tech .about-story, .mood-future-tech .skill-item, .mood-future-tech .project-preview-grid article { border-color: color-mix(in srgb, var(--preview-accent) 33%, transparent); border-radius: 9px; box-shadow: inset 0 1px color-mix(in srgb, var(--preview-accent) 13%, transparent), 0 12px 28px color-mix(in srgb, var(--preview-accent) 8%, transparent); }
+
+.mood-bright-student .student-chip { border-color: color-mix(in srgb, var(--pw-yellow) 70%, transparent); background: color-mix(in srgb, var(--pw-yellow) 20%, transparent); color: var(--canvas-text); }
+.mood-bright-student .page-section-heading::after { display: block; width: 34px; height: 7px; margin-top: 10px; border-radius: 3px; background: var(--preview-accent); box-shadow: 12px 0 0 var(--preview-secondary), 24px 0 0 var(--pw-yellow); content: ""; opacity: .9; }
+.mood-bright-student .journey-card, .mood-bright-student .about-story, .mood-bright-student .skill-item, .mood-bright-student .project-preview-grid article, .mood-bright-student .award-stack { border-radius: 18px; box-shadow: 0 12px 25px color-mix(in srgb, var(--preview-accent) 9%, transparent); }
+.mood-bright-student .hero-actions span { border-radius: 11px; }
+.mood-bright-student .robot-visual { background: radial-gradient(circle, color-mix(in srgb, var(--preview-accent) 26%, transparent), color-mix(in srgb, var(--pw-yellow) 7%, transparent) 48%, transparent 68%); }
+
+.mood-clean-professional .portfolio-navigation { background: var(--canvas-bg); backdrop-filter: none; }
+.mood-clean-professional .portfolio-page-section { border-bottom-color: color-mix(in srgb, var(--canvas-muted) 12%, transparent); }
+.mood-clean-professional .page-section-heading h3 { letter-spacing: -.035em; }
+.mood-clean-professional .page-section-heading > span { letter-spacing: .22em; }
+.mood-clean-professional .journey-card, .mood-clean-professional .about-story, .mood-clean-professional .skill-item, .mood-clean-professional .project-preview-grid article { border-color: color-mix(in srgb, var(--canvas-muted) 26%, transparent); border-radius: 7px; box-shadow: none; }
+.mood-clean-professional .code-card, .mood-clean-professional .orbit-two { display: none; }
+.mood-clean-professional .hero-actions span { border-radius: 5px; box-shadow: none; }
+
+.mood-dynamic-project .portfolio-navigation { background: linear-gradient(90deg, color-mix(in srgb, var(--preview-accent) 13%, var(--canvas-bg)), color-mix(in srgb, var(--preview-secondary) 10%, var(--canvas-bg))); }
+.mood-dynamic-project .orbit-one { animation: orbit-spin 9s linear infinite; }
+.mood-dynamic-project .orbit-two { animation: orbit-spin-reverse 12s linear infinite; }
+.mood-dynamic-project .page-section-heading h3 { max-width: 700px; font-size: clamp(22px, 2.25vw, 35px); }
+.mood-dynamic-project .page-section-heading::after { display: block; width: 74px; height: 3px; margin-top: 11px; background: linear-gradient(90deg, var(--preview-accent), var(--preview-secondary)); content: ""; }
+.mood-dynamic-project .journey-card, .mood-dynamic-project .about-story, .mood-dynamic-project .skill-item, .mood-dynamic-project .project-preview-grid article { border-radius: 14px; box-shadow: 0 15px 32px color-mix(in srgb, var(--preview-secondary) 11%, transparent); }
+.mood-dynamic-project .project-preview-grid article:nth-child(even) { transform: translateY(7px); }
+.mood-dynamic-project .project-preview-grid article { transition: transform 220ms ease, box-shadow 220ms ease; }
+.mood-dynamic-project .hero-actions span:first-child { box-shadow: 6px 6px 0 color-mix(in srgb, var(--preview-secondary) 55%, transparent); }
 
 .preview-focus {
   position: relative;

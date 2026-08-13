@@ -14,6 +14,7 @@ import {
   SKILL_OPTIONS,
   STEPS,
   createStitchPrompt,
+  resolveMoodPreset,
   stepComplete,
 } from "./workflow";
 import PortfolioPreview from "./portfolio-preview";
@@ -108,6 +109,40 @@ function MultiChoice({ label, values, options, other, onToggle, onOther, locked 
   );
 }
 
+const MOOD_PRESET_DESCRIPTIONS: Record<string, string> = {
+  "미래 기술형": "네온 빛과 정밀한 기술 UI",
+  "밝은 학생형": "밝은 포인트와 친근한 카드",
+  "깔끔 전문형": "정돈된 여백과 절제된 표현",
+  "역동 프로젝트형": "움직임과 강한 프로젝트 강조",
+};
+
+function MoodPresetGroup({ value, onChange, onPreviewFocus }: {
+  value: string;
+  onChange: (value: string) => void;
+  onPreviewFocus?: () => void;
+}) {
+  return (
+    <div className="input-block wide mood-preset-picker" onFocusCapture={onPreviewFocus}>
+      <span className="input-title">디자인 분위기<em>단일 선택</em></span>
+      <div className="mood-preset-grid" role="radiogroup" aria-label="디자인 분위기">
+        {MOOD_OPTIONS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={value === option}
+            className={value === option ? "selected" : ""}
+            onClick={() => onChange(option)}
+          >
+            <strong>{option}</strong>
+            <small>{MOOD_PRESET_DESCRIPTIONS[option]}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TextInput({ label, value, onChange, placeholder, multiline = false, optional = false, onPreviewFocus }: {
   label: string;
   value: string;
@@ -183,6 +218,7 @@ export default function Home() {
         const saved = window.localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as Partial<PortfolioData>;
+          const moodPreset = resolveMoodPreset(parsed.moods, parsed.moodOther);
           setData({
             ...INITIAL_DATA,
             ...parsed,
@@ -190,6 +226,8 @@ export default function Home() {
             awards: parsed.awards?.length ? parsed.awards : INITIAL_DATA.awards,
             projects: parsed.projects?.length ? parsed.projects : INITIAL_DATA.projects,
             skillLevels: parsed.skillLevels ?? INITIAL_DATA.skillLevels,
+            moods: [moodPreset],
+            moodOther: "",
           });
         }
       } catch {
@@ -222,7 +260,7 @@ export default function Home() {
 
   const focusPreview = (key: string) => setPreviewFocus((previous) => ({ key, request: previous.request + 1 }));
   const update = <K extends keyof PortfolioData>(key: K, value: PortfolioData[K]) => setData((previous) => ({ ...previous, [key]: value }));
-  const toggle = (key: "sections" | "skills" | "moods" | "backgrounds", value: string) => {
+  const toggle = (key: "sections" | "skills" | "backgrounds", value: string) => {
     if (key === "sections" && value === "Competition Journey") return;
     if (key === "backgrounds") {
       if (value === "배경 효과 없음") {
@@ -248,6 +286,7 @@ export default function Home() {
   const updateAward = (id: string, key: string, value: string) => update("awards", data.awards.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const updateProject = (id: string, key: string, value: string) => update("projects", data.projects.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const updateSkillLevel = (skill: string, level: number) => update("skillLevels", { ...data.skillLevels, [skill]: level });
+  const updateMoodPreset = (value: string) => setData((previous) => ({ ...previous, moods: [value], moodOther: "" }));
   const selectedSkills = [...data.skills, data.skillOther.trim()].filter(Boolean);
 
   const addCompetition = () => {
@@ -359,7 +398,7 @@ export default function Home() {
           <ChoiceGroup label="화면 테마" value={data.theme} options={["다크 테마", "라이트 테마", "시스템 설정에 따라 변경"]} onChange={(value) => update("theme", value)} onPreviewFocus={() => focusPreview("design-system")} />
           <ChoiceGroup label="색상 조합" value={data.palette} options={["네온 블루 + 다크 네이비", "민트 + 네이비", "퍼플 + 블루", "레드 + 블랙", "직접 색상 입력"]} onChange={(value) => update("palette", value)} onPreviewFocus={() => focusPreview("design-system")} />
           {data.palette === "직접 색상 입력" && <TextInput label="사용할 색상" value={data.customColors} onChange={(value) => update("customColors", value)} onPreviewFocus={() => focusPreview("design-system")} placeholder="예: #00C2FF, #071426, #FFFFFF" />}
-          <MultiChoice label="디자인 분위기" values={data.moods} options={MOOD_OPTIONS} other={data.moodOther} onToggle={(value) => toggle("moods", value)} onOther={(value) => update("moodOther", value)} onPreviewFocus={() => focusPreview("design-system")} />
+          <MoodPresetGroup value={resolveMoodPreset(data.moods, data.moodOther)} onChange={updateMoodPreset} onPreviewFocus={() => focusPreview("design-system")} />
           <MultiChoice label="배경 효과" values={data.backgrounds} options={BACKGROUND_OPTIONS} other={data.backgroundOther} onToggle={(value) => toggle("backgrounds", value)} onOther={(value) => update("backgroundOther", value)} onPreviewFocus={() => focusPreview("design-system")} />
         </div>;
       case 9:

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { resolveMoodPreset } from "./workflow";
 import type { PortfolioData } from "./workflow";
 
 type PreviewProps = {
@@ -26,14 +27,10 @@ const PALETTE_VALUES: Record<string, [string, string, string]> = {
 };
 
 const MOOD_CLASSES: Record<string, string> = {
-  "미래적인": "mood-futuristic",
-  "기술적인": "mood-technical",
-  "깔끔한": "mood-clean",
-  "학생다운": "mood-student",
-  "전문적인": "mood-professional",
-  "역동적인": "mood-dynamic",
-  "미니멀한": "mood-minimal",
-  "친근한": "mood-friendly",
+  "미래 기술형": "mood-future-tech",
+  "밝은 학생형": "mood-bright-student",
+  "깔끔 전문형": "mood-clean-professional",
+  "역동 프로젝트형": "mood-dynamic-project",
 };
 
 const BACKGROUND_CLASSES: Record<string, string> = {
@@ -82,9 +79,7 @@ function previewTheme(data: PortfolioData): PreviewTheme {
 }
 
 function previewMoodClasses(data: PortfolioData) {
-  const classes = data.moods.map((mood) => MOOD_CLASSES[mood]).filter(Boolean);
-  if (data.moodOther.trim()) classes.push("mood-custom");
-  return classes;
+  return [MOOD_CLASSES[resolveMoodPreset(data.moods, data.moodOther)]];
 }
 
 function previewBackgroundClasses(data: PortfolioData) {
@@ -422,6 +417,7 @@ export default function PortfolioPreview({ data, currentStep, focusTarget, focus
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const navigation = [...data.sections, data.sectionOther].filter(Boolean).slice(0, 7);
   const annotation = annotationText(focusTarget);
+  const moodPreset = resolveMoodPreset(data.moods, data.moodOther);
   const canvasClasses = [
     "portfolio-canvas",
     previewThemeClass(data.theme),
@@ -487,6 +483,7 @@ export default function PortfolioPreview({ data, currentStep, focusTarget, focus
           className={canvasClasses}
           style={previewTheme(data)}
           data-preview-key="design-system"
+          data-mood-preset={moodPreset}
         >
           <nav className={`portfolio-navigation ${focusClass(focusTarget, "navigation")}`} data-preview-key="navigation">
             <div className={`preview-brand ${focusClass(focusTarget, "brand")}`} data-preview-key="brand"><span>R</span><b>{text(data.logoName, "ROBOT.FOLIO")}</b></div>
