@@ -153,6 +153,22 @@ export const SECTION_OPTIONS = [
   "Contact",
 ];
 
+export function normalizeSections(values: string[] | undefined) {
+  const source = Array.isArray(values) ? values : INITIAL_DATA.sections;
+  const sections = source.reduce<string[]>((result, value) => {
+    const section = typeof value === "string" ? value.trim() : "";
+    if (SECTION_OPTIONS.includes(section) && !result.includes(section)) result.push(section);
+    return result;
+  }, []);
+
+  if (!sections.includes("Competition Journey")) {
+    const aboutIndex = sections.indexOf("About");
+    sections.splice(aboutIndex >= 0 ? aboutIndex + 1 : 0, 0, "Competition Journey");
+  }
+
+  return sections;
+}
+
 export const ROLE_OPTIONS = [
   "로봇 제작",
   "프로그래밍",
@@ -312,7 +328,8 @@ function projectBlock(items: Project[]) {
 }
 
 export function createStitchPrompt(data: PortfolioData) {
-  const sections = joinWithOther(data.sections, data.sectionOther);
+  const orderedSections = [...normalizeSections(data.sections), data.sectionOther.trim()].filter(Boolean);
+  const sections = orderedSections.map((section, index) => `${index + 1}. ${section}`).join(" → ");
   const skills = joinWithOther(data.skills, data.skillOther);
   const skillNames = [...data.skills, data.skillOther.trim()].filter(Boolean);
   const skillLevels = skillNames.map((skill) => {
@@ -349,8 +366,9 @@ export function createStitchPrompt(data: PortfolioData) {
 ${textRule}
 
 ## 3. 메뉴 및 영역 구성
-- 표시할 영역: ${sections}
+- 표시할 영역 및 생성 순서: ${sections}
 - 상단에는 고정형 내비게이션 바를 만들고 왼쪽에 “${data.logoName}” 로고와 작은 로봇 아이콘을 넣어 주세요.
+- 위에 적힌 순서를 바꾸지 말고 상단 메뉴와 본문 섹션 양쪽에 동일하게 적용해 주세요.
 - 선택한 영역 이름을 상단 메뉴로 사용하고, 각 메뉴를 클릭하면 페이지 안의 해당 영역으로 부드럽게 이동하게 해 주세요.
 - Competition Journey 영역은 대회 결과만 나열하지 말고 역할·성찰·성장 과정이 드러나도록 구성해 주세요.
 
