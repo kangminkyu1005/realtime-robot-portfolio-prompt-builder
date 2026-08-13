@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { useMemo, useState, useEffect } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   BACKGROUND_OPTIONS,
   EMPTY_AWARD,
@@ -13,15 +15,68 @@ import {
   SKILL_OPTIONS,
   STEPS,
   createStitchPrompt,
+  normalizeSections,
+  resolveMoodPreset,
   stepComplete,
 } from "./workflow";
-import type { PortfolioData, Step } from "./workflow";
+import PortfolioPreview from "./portfolio-preview";
+import type { PortfolioData } from "./workflow";
 
 const STORAGE_KEY = "robot-portfolio-prompt-builder-v1";
-const boardWidth = 1460;
-const boardHeight = 720;
-const cardWidth = 235;
-const cardHeight = 168;
+
+type AppView = "landing" | "workflow" | "builder";
+
+const CREATION_WORKFLOW = [
+  {
+    number: "01",
+    icon: "🧠",
+    iconLabel: "뇌",
+    title: "아이디어 구상",
+    description: "웹 앱의 목적과 전체 작업 흐름을 먼저 정리해요.",
+    meta: "목적 · 사용자 · 워크플로우",
+    color: "yellow",
+  },
+  {
+    number: "02",
+    icon: "✏️",
+    iconLabel: "연필",
+    title: "프롬프트 작성",
+    description: "디자인과 웹앱에 필요한 내용을 단계별로 작성해요.",
+    meta: "디자인 프롬프트 · 웹앱 프롬프트",
+    color: "mint",
+  },
+  {
+    number: "03",
+    icon: "🎨",
+    iconLabel: "페인트 팔레트",
+    title: "디자인 생성",
+    description: "AI Stitch에서 포트폴리오 화면 디자인을 만들어요.",
+    meta: "AI STITCH · UI/UX 디자인",
+    color: "blue",
+  },
+  {
+    number: "04",
+    icon: "⚙️",
+    iconLabel: "기어",
+    title: "기능 구현",
+    description: "AI Studio에서 실제로 동작하는 웹앱 기능을 연결해요.",
+    meta: "AI STUDIO · 실제 웹앱 기능",
+    color: "coral",
+  },
+];
+
+const STEP_PREVIEW_TARGETS: Record<number, string> = {
+  1: "brand",
+  2: "about-purpose",
+  3: "navigation",
+  4: "hero-title",
+  5: "competition-section",
+  6: "skills-section",
+  7: "projects-section",
+  8: "design-system",
+  9: "footer",
+  10: "overview",
+};
 
 function uid(prefix: string) {
   const values = new Uint32Array(2);
@@ -29,33 +84,35 @@ function uid(prefix: string) {
   return `${prefix}-${values[0].toString(16)}${values[1].toString(16)}`;
 }
 
-function connectorPath(from: Step, to: Step) {
-  const x1 = from.x + cardWidth / 2;
-  const y1 = from.y + cardHeight / 2;
-  const x2 = to.x + cardWidth / 2;
-  const y2 = to.y + cardHeight / 2;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    return `M ${x1} ${y1} C ${x1 + dx * 0.45} ${y1}, ${x2 - dx * 0.45} ${y2}, ${x2} ${y2}`;
-  }
-  return `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.45}, ${x2} ${y2 - dy * 0.45}, ${x2} ${y2}`;
-}
-
-function ChoiceGroup({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+function ChoiceGroup({ label, value, options, onChange, onPreviewFocus }: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  onPreviewFocus?: () => void;
+}) {
   return (
-    <div className="input-block">
+    <div className="input-block" onFocusCapture={onPreviewFocus}>
       <span className="input-title">{label}<em>필수</em></span>
       <div className="choice-pills" role="radiogroup" aria-label={label}>
         {options.map((option) => (
-          <button key={option} type="button" role="radio" aria-checked={value === option} className={value === option ? "selected" : ""} onClick={() => onChange(option)}>{option}</button>
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={value === option}
+            className={value === option ? "selected" : ""}
+            onClick={() => onChange(option)}
+          >
+            {option}
+          </button>
         ))}
       </div>
     </div>
   );
 }
 
-function MultiChoice({ label, values, options, other, onToggle, onOther, locked = [] }: {
+function MultiChoice({ label, values, options, other, onToggle, onOther, locked = [], onPreviewFocus }: {
   label: string;
   values: string[];
   options: string[];
@@ -63,49 +120,320 @@ function MultiChoice({ label, values, options, other, onToggle, onOther, locked 
   onToggle: (value: string) => void;
   onOther: (value: string) => void;
   locked?: string[];
+  onPreviewFocus?: () => void;
 }) {
   return (
-    <div className="input-block wide">
+    <div className="input-block wide" onFocusCapture={onPreviewFocus}>
       <span className="input-title">{label}<em>복수 선택</em></span>
       <div className="multi-pills">
         {options.map((option) => {
           const active = values.includes(option);
           const isLocked = locked.includes(option);
-          return <button key={option} type="button" className={active ? "selected" : ""} onClick={() => !isLocked && onToggle(option)} aria-pressed={active}>{active ? "✓ " : ""}{option}{isLocked ? " · 필수" : ""}</button>;
+          return (
+            <button
+              key={option}
+              type="button"
+              className={active ? "selected" : ""}
+              onClick={() => !isLocked && onToggle(option)}
+              aria-pressed={active}
+            >
+              {active ? "✓ " : ""}{option}{isLocked ? " · 필수" : ""}
+            </button>
+          );
         })}
       </div>
-      <input className="other-input" value={other} onChange={(event) => onOther(event.target.value)} placeholder="기타 항목이 있다면 직접 입력하세요." />
+      <input
+        className="other-input"
+        value={other}
+        onChange={(event) => onOther(event.target.value)}
+        placeholder="기타 항목이 있다면 직접 입력하세요."
+      />
     </div>
   );
 }
 
-function TextInput({ label, value, onChange, placeholder, multiline = false, optional = false }: {
+function BrandLockup({ heading = "포트폴리오 프롬프트 빌더" }: { heading?: string }) {
+  return (
+    <div className="brand-row">
+      <Image className="playwell-logo" src="/playwell-logo.png" alt="playwell" width={151} height={40} priority unoptimized />
+      <div className="brand-divider" />
+      <div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>{heading}</h1></div>
+    </div>
+  );
+}
+
+function LandingScreen({ completedCount, onShowWorkflow }: { completedCount: number; onShowWorkflow: () => void }) {
+  return (
+    <main className="welcome-shell">
+      <header className="welcome-header">
+        <BrandLockup />
+        <span className="welcome-save-status"><i /> 입력 내용은 이 브라우저에 자동 저장됩니다</span>
+      </header>
+
+      <section className="welcome-hero" aria-labelledby="welcome-title">
+        <div className="welcome-copy">
+          <span className="welcome-kicker"><i /> PLAYWELL ROBOT PORTFOLIO LAB</span>
+          <h2 id="welcome-title">로봇·코딩의 경험을<br /><em>하나의 포트폴리오로</em></h2>
+          <p>질문에 답하면 입력한 내용이 실제 포트폴리오 화면에 실시간으로 쌓이고, 마지막에는 AI Stitch에서 사용할 완성형 프롬프트가 만들어집니다.</p>
+          <div className="welcome-actions">
+            <button type="button" className="welcome-primary" onClick={onShowWorkflow}>작업 흐름 확인하기 <span>→</span></button>
+            <small>시작하기 전에 4단계 제작 과정을 먼저 보여드려요.</small>
+          </div>
+          <div className="welcome-facts" aria-label="빌더 특징">
+            <span><b>10</b> 단계별 질문</span>
+            <span><b>LIVE</b> 누적 미리보기</span>
+            <span><b>{completedCount}</b> / 9 작성 완료</span>
+          </div>
+        </div>
+
+        <div className="welcome-visual" aria-label="포트폴리오가 만들어지는 과정 미리보기">
+          <div className="welcome-orbit orbit-a" />
+          <div className="welcome-orbit orbit-b" />
+          <div className="welcome-browser-card">
+            <div className="welcome-browser-bar"><span><i /><i /><i /></span><b>portfolio.preview</b></div>
+            <div className="welcome-browser-body">
+              <div className="welcome-mini-nav"><b>R</b><span>PLAYWELL LAB</span><i>LIVE</i></div>
+              <div className="welcome-mini-copy"><small>MY ROBOT JOURNEY</small><strong>아이디어가<br />화면이 되는 순간</strong><span>입력 → 미리보기 → 프롬프트</span></div>
+              <div className="welcome-mini-robot" aria-hidden="true"><i /><i /><b /></div>
+            </div>
+          </div>
+          {CREATION_WORKFLOW.map((item, index) => (
+            <div className={`floating-tool tool-${index + 1} ${item.color}`} key={item.title} aria-hidden="true"><span>{item.icon}</span><b>{item.number}</b></div>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function WorkflowScreen({ onBack, onEnterBuilder }: { onBack: () => void; onEnterBuilder: () => void }) {
+  return (
+    <main className="workflow-shell">
+      <header className="welcome-header workflow-header">
+        <BrandLockup heading="포트폴리오 제작 워크플로우" />
+        <button type="button" className="workflow-back" onClick={onBack}>← 메인으로</button>
+      </header>
+
+      <section className="workflow-content" aria-labelledby="workflow-title">
+        <div className="workflow-heading">
+          <span>HOW IT WORKS</span>
+          <h2 id="workflow-title">아이디어에서 실제 웹앱까지,<br />네 가지 도구로 완성해요</h2>
+          <p>프롬프트 빌더는 앞의 두 단계를 정리하고, AI 제작 도구로 자연스럽게 이어지도록 설계되었습니다.</p>
+        </div>
+
+        <ol className="workflow-cards">
+          {CREATION_WORKFLOW.map((item, index) => (
+            <li className={`workflow-card ${item.color}`} key={item.title}>
+              <span className="workflow-number">STEP {item.number}</span>
+              <div className="workflow-tool-image" role="img" aria-label={`${item.iconLabel} 도구 이미지`}><span>{item.icon}</span><i /></div>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <b>{item.meta}</b>
+              {index < CREATION_WORKFLOW.length - 1 && <span className="workflow-connector" aria-hidden="true">→</span>}
+            </li>
+          ))}
+        </ol>
+
+        <div className="workflow-cta">
+          <div><span>READY TO BUILD?</span><strong>이제 내 로봇 포트폴리오를 시작해 볼까요?</strong></div>
+          <button type="button" onClick={onEnterBuilder}>포트폴리오 만들기 <span>→</span></button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function SectionOrderEditor({ values, options, other, onToggle, onOther, onReorder, onPreviewFocus }: {
+  values: string[];
+  options: string[];
+  other: string;
+  onToggle: (value: string) => void;
+  onOther: (value: string) => void;
+  onReorder: (values: string[]) => void;
+  onPreviewFocus?: () => void;
+}) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  const moveSection = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= values.length || to >= values.length) return;
+    const next = [...values];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onReorder(next);
+    onPreviewFocus?.();
+  };
+
+  const sectionAtPoint = (event: ReactPointerEvent<HTMLLIElement>) => {
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLLIElement>("[data-section-name]");
+    return target?.dataset.sectionName ?? null;
+  };
+
+  const finishPointerDrag = (event: ReactPointerEvent<HTMLLIElement>) => {
+    const target = sectionAtPoint(event);
+    if (dragging && target) moveSection(values.indexOf(dragging), values.indexOf(target));
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setDragging(null);
+    setDropTarget(null);
+  };
+
+  return (
+    <div className="input-block wide section-order-editor" onFocusCapture={onPreviewFocus}>
+      <span className="input-title">포트폴리오에 표시할 영역<em>복수 선택</em></span>
+      <div className="multi-pills section-choice-pills">
+        {options.map((option) => {
+          const active = values.includes(option);
+          const required = option === "Competition Journey";
+          return (
+            <button
+              key={option}
+              type="button"
+              className={active ? "selected" : ""}
+              onClick={() => !required && onToggle(option)}
+              aria-pressed={active}
+              aria-disabled={required}
+            >
+              {active ? "✓ " : ""}{option}{required ? " · 필수" : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="section-order-heading"><div><b>표시 순서</b><span>카드를 드래그하거나 화살표로 순서를 바꾸세요.</span></div><small>{values.length}개 영역</small></div>
+      <ol className="section-order-list" aria-label="선택한 포트폴리오 영역 순서">
+        {values.map((section, index) => (
+          <li
+            key={section}
+            data-section-name={section}
+            className={`${dragging === section ? "dragging" : ""} ${dropTarget === section ? "drop-target" : ""}`}
+            onPointerDown={(event) => {
+              if ((event.target as HTMLElement).closest("button")) return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setDragging(section);
+            }}
+            onPointerMove={(event) => {
+              if (!dragging) return;
+              const target = sectionAtPoint(event);
+              if (target && target !== dragging) setDropTarget(target);
+            }}
+            onPointerUp={finishPointerDrag}
+            onPointerCancel={() => { setDragging(null); setDropTarget(null); }}
+          >
+            <span className="drag-handle" aria-hidden="true">⠿</span>
+            <i>{String(index + 1).padStart(2, "0")}</i>
+            <b>{section}</b>
+            {section === "Competition Journey" && <small>필수</small>}
+            <div className="order-buttons">
+              <button type="button" onClick={() => moveSection(index, index - 1)} disabled={index === 0} aria-label={`${section} 위로 이동`}>↑</button>
+              <button type="button" onClick={() => moveSection(index, index + 1)} disabled={index === values.length - 1} aria-label={`${section} 아래로 이동`}>↓</button>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <input className="other-input" value={other} onChange={(event) => onOther(event.target.value)} placeholder="기타 항목이 있다면 입력하세요. 마지막 영역에 추가됩니다." />
+    </div>
+  );
+}
+
+const MOOD_PRESET_DESCRIPTIONS: Record<string, string> = {
+  "미래 기술형": "네온 빛과 정밀한 기술 UI",
+  "밝은 학생형": "밝은 포인트와 친근한 카드",
+  "깔끔 전문형": "정돈된 여백과 절제된 표현",
+  "역동 프로젝트형": "움직임과 강한 프로젝트 강조",
+};
+
+function MoodPresetGroup({ value, onChange, onPreviewFocus }: {
+  value: string;
+  onChange: (value: string) => void;
+  onPreviewFocus?: () => void;
+}) {
+  return (
+    <div className="input-block wide mood-preset-picker" onFocusCapture={onPreviewFocus}>
+      <span className="input-title">디자인 분위기<em>단일 선택</em></span>
+      <div className="mood-preset-grid" role="radiogroup" aria-label="디자인 분위기">
+        {MOOD_OPTIONS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={value === option}
+            className={value === option ? "selected" : ""}
+            onClick={() => onChange(option)}
+          >
+            <strong>{option}</strong>
+            <small>{MOOD_PRESET_DESCRIPTIONS[option]}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TextInput({ label, value, onChange, placeholder, multiline = false, optional = false, onPreviewFocus }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   multiline?: boolean;
   optional?: boolean;
+  onPreviewFocus?: () => void;
 }) {
   return (
     <label className="input-block">
       <span className="input-title">{label}<em className={optional ? "optional" : ""}>{optional ? "선택" : "필수"}</em></span>
       {multiline
-        ? <textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
-        : <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />}
+        ? <textarea rows={3} value={value} onFocus={onPreviewFocus} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+        : <input value={value} onFocus={onPreviewFocus} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />}
     </label>
   );
 }
 
+function SkillLevelEditor({ skills, levels, onChange, onPreviewFocus }: {
+  skills: string[];
+  levels: Record<string, number>;
+  onChange: (skill: string, level: number) => void;
+  onPreviewFocus?: () => void;
+}) {
+  return (
+    <div className="input-block wide skill-level-editor" onFocusCapture={onPreviewFocus}>
+      <span className="input-title">기술별 숙련도<em className="optional">1~5단계</em></span>
+      <p>진행도에 표시할 실제 수준을 선택하세요. 선택하지 않은 기술은 기본 3단계로 표시됩니다.</p>
+      {skills.length ? skills.map((skill) => {
+        const level = levels[skill] ?? 3;
+        return (
+          <div className="skill-level-row" key={skill}>
+            <b>{skill}</b>
+            <div className="skill-level-buttons" role="radiogroup" aria-label={`${skill} 숙련도`}>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={level === value}
+                  className={level === value ? "selected" : ""}
+                  onClick={() => onChange(skill, value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            <span>{level}단계</span>
+          </div>
+        );
+      }) : <div className="info-note"><b>안내</b><span>6단계에서 기술과 역량을 먼저 선택하면 숙련도를 설정할 수 있어요.</span></div>}
+    </div>
+  );
+}
+
 export default function Home() {
+  const [appView, setAppView] = useState<AppView>("landing");
   const [current, setCurrent] = useState(0);
   const [data, setData] = useState<PortfolioData>(INITIAL_DATA);
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState("불러오는 중");
   const [showPrompt, setShowPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
-  const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const initialized = useRef(false);
+  const [previewFocus, setPreviewFocus] = useState({ key: STEP_PREVIEW_TARGETS[1], request: 0 });
   const step = STEPS[current];
   const completedCount = STEPS.slice(0, 9).filter((item) => stepComplete(item.number, data)).length;
   const allComplete = completedCount === 9;
@@ -117,12 +445,17 @@ export default function Home() {
         const saved = window.localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as Partial<PortfolioData>;
+          const moodPreset = resolveMoodPreset(parsed.moods, parsed.moodOther);
           setData({
             ...INITIAL_DATA,
             ...parsed,
+            sections: normalizeSections(parsed.sections),
             competitions: parsed.competitions?.length ? parsed.competitions : INITIAL_DATA.competitions,
             awards: parsed.awards?.length ? parsed.awards : INITIAL_DATA.awards,
             projects: parsed.projects?.length ? parsed.projects : INITIAL_DATA.projects,
+            skillLevels: parsed.skillLevels ?? INITIAL_DATA.skillLevels,
+            moods: [moodPreset],
+            moodOther: "",
           });
         }
       } catch {
@@ -147,35 +480,68 @@ export default function Home() {
   }, [data, hydrated]);
 
   useEffect(() => {
-    const card = cardRefs.current[current];
-    if (!card) return;
-    card.scrollIntoView({ behavior: initialized.current ? "smooth" : "auto", block: "center", inline: "center" });
-    initialized.current = true;
-  }, [current]);
-
-  useEffect(() => {
     if (!showPrompt) return;
     const onKeyDown = (event: KeyboardEvent) => event.key === "Escape" && setShowPrompt(false);
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showPrompt]);
 
+  const focusPreview = (key: string) => setPreviewFocus((previous) => ({ key, request: previous.request + 1 }));
   const update = <K extends keyof PortfolioData>(key: K, value: PortfolioData[K]) => setData((previous) => ({ ...previous, [key]: value }));
-  const toggle = (key: "sections" | "skills" | "moods" | "backgrounds", value: string) => {
+  const toggle = (key: "sections" | "skills" | "backgrounds", value: string) => {
     if (key === "sections" && value === "Competition Journey") return;
-    update(key, data[key].includes(value) ? data[key].filter((item) => item !== value) : [...data[key], value]);
+    setData((previous) => {
+      if (key === "backgrounds") {
+        if (value === "배경 효과 없음") {
+          return { ...previous, backgrounds: previous.backgrounds.includes(value) ? [] : [value] };
+        }
+        const activeBackgrounds = previous.backgrounds.filter((item) => item !== "배경 효과 없음");
+        return {
+          ...previous,
+          backgrounds: activeBackgrounds.includes(value)
+            ? activeBackgrounds.filter((item) => item !== value)
+            : [...activeBackgrounds, value],
+        };
+      }
+      const currentValues = previous[key];
+      return { ...previous, [key]: currentValues.includes(value) ? currentValues.filter((item) => item !== value) : [...currentValues, value] };
+    });
   };
-  const move = (direction: number) => setCurrent((value) => Math.min(STEPS.length - 1, Math.max(0, value + direction)));
+  const selectStep = (index: number) => {
+    const nextIndex = Math.min(STEPS.length - 1, Math.max(0, index));
+    setCurrent(nextIndex);
+    focusPreview(STEP_PREVIEW_TARGETS[STEPS[nextIndex].number]);
+  };
+  const move = (direction: number) => selectStep(current + direction);
   const next = () => current === 9 ? allComplete && setShowPrompt(true) : stepComplete(step.number, data) && move(1);
   const updateCompetition = (id: string, key: string, value: string | string[]) => update("competitions", data.competitions.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const updateAward = (id: string, key: string, value: string) => update("awards", data.awards.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const updateProject = (id: string, key: string, value: string) => update("projects", data.projects.map((item) => item.id === id ? { ...item, [key]: value } : item));
+  const updateSkillLevel = (skill: string, level: number) => update("skillLevels", { ...data.skillLevels, [skill]: level });
+  const updateMoodPreset = (value: string) => setData((previous) => ({ ...previous, moods: [value], moodOther: "" }));
+  const selectedSkills = [...data.skills, data.skillOther.trim()].filter(Boolean);
+
+  const addCompetition = () => {
+    const id = uid("competition");
+    update("competitions", [...data.competitions, { ...EMPTY_COMPETITION, id }]);
+    focusPreview(`competition-${id}`);
+  };
+  const addAward = () => {
+    const id = uid("award");
+    update("awards", [...data.awards, { ...EMPTY_AWARD, id }]);
+    focusPreview(`award-${id}`);
+  };
+  const addProject = () => {
+    const id = uid("project");
+    update("projects", [...data.projects, { ...EMPTY_PROJECT, id }]);
+    focusPreview(`project-${id}`);
+  };
 
   const reset = () => {
     if (!window.confirm("작성한 내용을 모두 지울까요? 삭제한 내용은 되돌릴 수 없습니다.")) return;
     setData(INITIAL_DATA);
     window.localStorage.removeItem(STORAGE_KEY);
-    setCurrent(0);
+    selectStep(0);
   };
 
   const copyPrompt = async () => {
@@ -188,119 +554,148 @@ export default function Home() {
     switch (step.number) {
       case 1:
         return <div className="form-grid">
-          <TextInput label="학생 이름" value={data.studentName} onChange={(value) => update("studentName", value)} placeholder="예: 강건형" />
-          <TextInput label="포트폴리오 이름" value={data.portfolioName} onChange={(value) => update("portfolioName", value)} placeholder="예: GunHyung's Robot Portfolio" />
-          <TextInput label="웹앱 로고 이름" value={data.logoName} onChange={(value) => update("logoName", value)} placeholder="예: GunHyung's Portfolio" />
-          <ChoiceGroup label="사용 언어" value={data.language} options={["한국어", "영어", "한국어와 영어 혼합"]} onChange={(value) => update("language", value)} />
+          <TextInput label="학생 이름" value={data.studentName} onChange={(value) => update("studentName", value)} onPreviewFocus={() => focusPreview("student-name")} placeholder="예: 강건형" />
+          <TextInput label="포트폴리오 이름" value={data.portfolioName} onChange={(value) => update("portfolioName", value)} onPreviewFocus={() => focusPreview("portfolio-name")} placeholder="예: GunHyung's Robot Portfolio" />
+          <TextInput label="웹앱 로고 이름" value={data.logoName} onChange={(value) => update("logoName", value)} onPreviewFocus={() => focusPreview("brand")} placeholder="예: GunHyung's Portfolio" />
+          <ChoiceGroup label="사용 언어" value={data.language} options={["한국어", "영어", "한국어와 영어 혼합"]} onChange={(value) => update("language", value)} onPreviewFocus={() => focusPreview("language")} />
         </div>;
       case 2:
         return <div className="form-grid">
-          <TextInput label="웹앱의 목적" value={data.purpose} onChange={(value) => update("purpose", value)} placeholder="예: 로봇과 코딩 프로젝트를 통해 배우고 만든 결과물을 보여주는 포트폴리오" multiline />
-          <TextInput label="주요 사용자" value={data.audience} onChange={(value) => update("audience", value)} placeholder="예: 친구, 선생님, 대회 관계자와 가족" multiline />
-          <TextInput label="포트폴리오 소개" value={data.portfolioIntro} onChange={(value) => update("portfolioIntro", value)} placeholder="예: 결과뿐 아니라 시도하고 실패하며 개선한 성장 과정을 보여줍니다." multiline />
-          <ChoiceGroup label="입력 문구 처리" value={data.textPolicy} options={["입력한 문구를 그대로 사용", "맞춤법만 수정 허용", "자연스럽게 다듬기"]} onChange={(value) => update("textPolicy", value)} />
+          <TextInput label="웹앱의 목적" value={data.purpose} onChange={(value) => update("purpose", value)} onPreviewFocus={() => focusPreview("about-purpose")} placeholder="예: 로봇과 코딩 프로젝트를 통해 배우고 만든 결과물을 보여주는 포트폴리오" multiline />
+          <TextInput label="주요 사용자" value={data.audience} onChange={(value) => update("audience", value)} onPreviewFocus={() => focusPreview("about-audience")} placeholder="예: 친구, 선생님, 대회 관계자와 가족" multiline />
+          <TextInput label="포트폴리오 소개" value={data.portfolioIntro} onChange={(value) => update("portfolioIntro", value)} onPreviewFocus={() => focusPreview("about-intro")} placeholder="예: 결과뿐 아니라 시도하고 실패하며 개선한 성장 과정을 보여줍니다." multiline />
+          <ChoiceGroup label="입력 문구 처리" value={data.textPolicy} options={["입력한 문구를 그대로 사용", "맞춤법만 수정 허용", "자연스럽게 다듬기"]} onChange={(value) => update("textPolicy", value)} onPreviewFocus={() => focusPreview("text-policy")} />
         </div>;
       case 3:
         return <div className="form-grid single">
-          <MultiChoice label="포트폴리오에 표시할 영역" values={data.sections} options={SECTION_OPTIONS} other={data.sectionOther} onToggle={(value) => toggle("sections", value)} onOther={(value) => update("sectionOther", value)} locked={["Competition Journey"]} />
-          <div className="info-note"><b>자동 적용</b><span>선택한 영역만 메뉴와 본문에 포함되고, Competition Journey는 대회 성장 기록을 위해 항상 포함됩니다.</span></div>
+          <SectionOrderEditor values={data.sections} options={SECTION_OPTIONS} other={data.sectionOther} onToggle={(value) => toggle("sections", value)} onOther={(value) => update("sectionOther", value)} onReorder={(values) => update("sections", values)} onPreviewFocus={() => focusPreview("navigation")} />
+          <div className="info-note"><b>실시간 적용</b><span>선택한 순서가 오른쪽 상단 메뉴와 본문 섹션에 똑같이 반영됩니다. Competition Journey는 항상 포함되며 위치는 바꿀 수 있어요.</span></div>
         </div>;
       case 4:
         return <div className="form-grid">
-          <TextInput label="첫 화면 제목" value={data.heroTitle} onChange={(value) => update("heroTitle", value)} placeholder="예: My Robot and Code Portfolio" />
-          <TextInput label="첫 화면 소개 문장" value={data.heroIntro} onChange={(value) => update("heroIntro", value)} placeholder="예: It's my journey with robots and code" />
-          <TextInput label="자기소개" value={data.bio} onChange={(value) => update("bio", value)} placeholder="나의 로봇·코딩 경험을 소개해 주세요." multiline />
-          <TextInput label="앞으로의 목표" value={data.goal} onChange={(value) => update("goal", value)} placeholder="앞으로 도전하고 싶은 프로젝트와 키우고 싶은 능력을 적어 주세요." multiline />
+          <TextInput label="첫 화면 제목" value={data.heroTitle} onChange={(value) => update("heroTitle", value)} onPreviewFocus={() => focusPreview("hero-title")} placeholder="예: My Robot and Code Portfolio" />
+          <TextInput label="첫 화면 소개 문장" value={data.heroIntro} onChange={(value) => update("heroIntro", value)} onPreviewFocus={() => focusPreview("hero-intro")} placeholder="예: It's my journey with robots and code" />
+          <TextInput label="자기소개" value={data.bio} onChange={(value) => update("bio", value)} onPreviewFocus={() => focusPreview("about-bio")} placeholder="나의 로봇·코딩 경험을 소개해 주세요." multiline />
+          <TextInput label="앞으로의 목표" value={data.goal} onChange={(value) => update("goal", value)} onPreviewFocus={() => focusPreview("about-goal")} placeholder="앞으로 도전하고 싶은 프로젝트와 키우고 싶은 능력을 적어 주세요." multiline />
         </div>;
       case 5:
         return <div className="record-list">
-          {data.competitions.map((competition, index) => <article className="record-card" key={competition.id}>
-            <header><div><span>COMPETITION {String(index + 1).padStart(2, "0")}</span><strong>대회 기록 {index + 1}</strong></div>{data.competitions.length > 1 && <button type="button" onClick={() => update("competitions", data.competitions.filter((item) => item.id !== competition.id))}>삭제</button>}</header>
-            <div className="record-fields">
-              <TextInput label="대회명" value={competition.name} onChange={(value) => updateCompetition(competition.id, "name", value)} placeholder="예: 2026 RoboCup Korea Open CoSpace U12" />
-              <TextInput label="팀명" value={competition.team} onChange={(value) => updateCompetition(competition.id, "team", value)} placeholder="예: K.F.C.NOVA" />
-              <MultiChoice label="자신의 역할" values={competition.roles} options={ROLE_OPTIONS} other={competition.roleOther} onToggle={(value) => updateCompetition(competition.id, "roles", competition.roles.includes(value) ? competition.roles.filter((role) => role !== value) : [...competition.roles, value])} onOther={(value) => updateCompetition(competition.id, "roleOther", value)} />
-              <TextInput label="잘한 점" value={competition.strengths} onChange={(value) => updateCompetition(competition.id, "strengths", value)} placeholder="이번 대회에서 잘했다고 생각하는 점을 적어 주세요." multiline />
-              <TextInput label="아쉬운 점 및 보완할 점" value={competition.improvements} onChange={(value) => updateCompetition(competition.id, "improvements", value)} placeholder="아쉬웠던 점과 다음 대회를 위해 개선할 방법을 적어 주세요." multiline />
-              <TextInput label="이번 대회 한줄평" value={competition.review} onChange={(value) => updateCompetition(competition.id, "review", value)} placeholder="예: 끝까지 포기하지 않고 팀과 함께 성장한 대회였다." />
-            </div>
-          </article>)}
-          <button type="button" className="add-record" onClick={() => update("competitions", [...data.competitions, { ...EMPTY_COMPETITION, id: uid("competition") }])}>＋ 다른 대회 기록 추가</button>
+          {data.competitions.map((competition, index) => {
+            const base = `competition-${competition.id}`;
+            return <article className="record-card" key={competition.id}>
+              <header><div><span>COMPETITION {String(index + 1).padStart(2, "0")}</span><strong>대회 기록 {index + 1}</strong></div>{data.competitions.length > 1 && <button type="button" onClick={() => { update("competitions", data.competitions.filter((item) => item.id !== competition.id)); focusPreview("competition-section"); }}>삭제</button>}</header>
+              <div className="record-fields">
+                <TextInput label="대회명" value={competition.name} onChange={(value) => updateCompetition(competition.id, "name", value)} onPreviewFocus={() => focusPreview(`${base}-name`)} placeholder="예: 2026 RoboCup Korea Open CoSpace U12" />
+                <TextInput label="팀명" value={competition.team} onChange={(value) => updateCompetition(competition.id, "team", value)} onPreviewFocus={() => focusPreview(`${base}-team`)} placeholder="예: K.F.C.NOVA" />
+                <MultiChoice label="자신의 역할" values={competition.roles} options={ROLE_OPTIONS} other={competition.roleOther} onToggle={(value) => updateCompetition(competition.id, "roles", competition.roles.includes(value) ? competition.roles.filter((role) => role !== value) : [...competition.roles, value])} onOther={(value) => updateCompetition(competition.id, "roleOther", value)} onPreviewFocus={() => focusPreview(`${base}-roles`)} />
+                <TextInput label="잘한 점" value={competition.strengths} onChange={(value) => updateCompetition(competition.id, "strengths", value)} onPreviewFocus={() => focusPreview(`${base}-strengths`)} placeholder="이번 대회에서 잘했다고 생각하는 점을 적어 주세요." multiline />
+                <TextInput label="아쉬운 점 및 보완할 점" value={competition.improvements} onChange={(value) => updateCompetition(competition.id, "improvements", value)} onPreviewFocus={() => focusPreview(`${base}-improvements`)} placeholder="아쉬웠던 점과 다음 대회를 위해 개선할 방법을 적어 주세요." multiline />
+                <TextInput label="이번 대회 한줄평" value={competition.review} onChange={(value) => updateCompetition(competition.id, "review", value)} onPreviewFocus={() => focusPreview(`${base}-review`)} placeholder="예: 끝까지 포기하지 않고 팀과 함께 성장한 대회였다." />
+              </div>
+            </article>;
+          })}
+          <button type="button" className="add-record" onClick={addCompetition}>＋ 다른 대회 기록 추가</button>
         </div>;
       case 6:
         return <div className="split-editor">
-          <MultiChoice label="기술과 역량" values={data.skills} options={SKILL_OPTIONS} other={data.skillOther} onToggle={(value) => toggle("skills", value)} onOther={(value) => update("skillOther", value)} />
+          <MultiChoice label="기술과 역량" values={data.skills} options={SKILL_OPTIONS} other={data.skillOther} onToggle={(value) => toggle("skills", value)} onOther={(value) => update("skillOther", value)} onPreviewFocus={() => focusPreview("skills-list")} />
           <div className="compact-records"><span className="input-title">수상 내역<em className="optional">선택</em></span>
-            {data.awards.map((award, index) => <div className="compact-row" key={award.id}>
+            {data.awards.map((award, index) => <div className="compact-row" key={award.id} onFocusCapture={() => focusPreview(`award-${award.id}`)}>
               <input value={award.competition} onChange={(event) => updateAward(award.id, "competition", event.target.value)} placeholder={`대회명 ${index + 1}`} />
               <input value={award.result} onChange={(event) => updateAward(award.id, "result", event.target.value)} placeholder="예: 1st Place, Influencer Award" />
               {data.awards.length > 1 && <button type="button" onClick={() => update("awards", data.awards.filter((item) => item.id !== award.id))}>×</button>}
             </div>)}
-            <button type="button" className="small-add" onClick={() => update("awards", [...data.awards, { ...EMPTY_AWARD, id: uid("award") }])}>＋ 수상 내역 추가</button>
+            <button type="button" className="small-add" onClick={addAward}>＋ 수상 내역 추가</button>
           </div>
         </div>;
       case 7:
         return <div className="record-list">
-          {data.projects.map((project, index) => <article className="record-card" key={project.id}>
-            <header><div><span>PROJECT {String(index + 1).padStart(2, "0")}</span><strong>프로젝트 {index + 1}</strong></div>{data.projects.length > 1 && <button type="button" onClick={() => update("projects", data.projects.filter((item) => item.id !== project.id))}>삭제</button>}</header>
-            <div className="record-fields project-fields">
-              <TextInput label="프로젝트 제목" value={project.title} onChange={(value) => updateProject(project.id, "title", value)} placeholder="예: Line Tracing Robot" />
-              <TextInput label="사용 기술" value={project.technologies} onChange={(value) => updateProject(project.id, "technologies", value)} placeholder="예: Color Sensor, Motor Control, Block Coding" />
-              <TextInput label="프로젝트 설명" value={project.description} onChange={(value) => updateProject(project.id, "description", value)} placeholder="무엇을 만들고 어떻게 작동하는지 설명해 주세요." multiline />
-              <TextInput label="이미지 방향" value={project.imageDirection} onChange={(value) => updateProject(project.id, "imageDirection", value)} placeholder="예: 검은 선을 따라가는 LEGO 로봇 사진 영역" optional />
-              <TextInput label="프로젝트 링크" value={project.link} onChange={(value) => updateProject(project.id, "link", value)} placeholder="GitHub, 웹앱 또는 영상 주소" optional />
-            </div>
-          </article>)}
-          <button type="button" className="add-record" onClick={() => update("projects", [...data.projects, { ...EMPTY_PROJECT, id: uid("project") }])}>＋ 다른 프로젝트 추가</button>
+          {data.projects.map((project, index) => {
+            const base = `project-${project.id}`;
+            return <article className="record-card" key={project.id}>
+              <header><div><span>PROJECT {String(index + 1).padStart(2, "0")}</span><strong>프로젝트 {index + 1}</strong></div>{data.projects.length > 1 && <button type="button" onClick={() => { update("projects", data.projects.filter((item) => item.id !== project.id)); focusPreview("projects-section"); }}>삭제</button>}</header>
+              <div className="record-fields project-fields">
+                <TextInput label="프로젝트 제목" value={project.title} onChange={(value) => updateProject(project.id, "title", value)} onPreviewFocus={() => focusPreview(base)} placeholder="예: Line Tracing Robot" />
+                <TextInput label="사용 기술" value={project.technologies} onChange={(value) => updateProject(project.id, "technologies", value)} onPreviewFocus={() => focusPreview(`${base}-technologies`)} placeholder="예: Color Sensor, Motor Control, Block Coding" />
+                <TextInput label="프로젝트 설명" value={project.description} onChange={(value) => updateProject(project.id, "description", value)} onPreviewFocus={() => focusPreview(`${base}-description`)} placeholder="무엇을 만들고 어떻게 작동하는지 설명해 주세요." multiline />
+                <TextInput label="이미지 방향" value={project.imageDirection} onChange={(value) => updateProject(project.id, "imageDirection", value)} onPreviewFocus={() => focusPreview(`${base}-image`)} placeholder="예: 검은 선을 따라가는 로봇 사진 영역" optional />
+                <TextInput label="프로젝트 링크" value={project.link} onChange={(value) => updateProject(project.id, "link", value)} onPreviewFocus={() => focusPreview(`${base}-link`)} placeholder="GitHub, 웹앱 또는 영상 주소" optional />
+              </div>
+            </article>;
+          })}
+          <button type="button" className="add-record" onClick={addProject}>＋ 다른 프로젝트 추가</button>
         </div>;
       case 8:
         return <div className="form-grid design-grid">
-          <ChoiceGroup label="화면 테마" value={data.theme} options={["다크 테마", "라이트 테마", "시스템 설정에 따라 변경"]} onChange={(value) => update("theme", value)} />
-          <ChoiceGroup label="색상 조합" value={data.palette} options={["네온 블루 + 다크 네이비", "민트 + 네이비", "퍼플 + 블루", "레드 + 블랙", "직접 색상 입력"]} onChange={(value) => update("palette", value)} />
-          {data.palette === "직접 색상 입력" && <TextInput label="사용할 색상" value={data.customColors} onChange={(value) => update("customColors", value)} placeholder="예: #00C2FF, #071426, #FFFFFF" />}
-          <MultiChoice label="디자인 분위기" values={data.moods} options={MOOD_OPTIONS} other={data.moodOther} onToggle={(value) => toggle("moods", value)} onOther={(value) => update("moodOther", value)} />
-          <MultiChoice label="배경 효과" values={data.backgrounds} options={BACKGROUND_OPTIONS} other={data.backgroundOther} onToggle={(value) => toggle("backgrounds", value)} onOther={(value) => update("backgroundOther", value)} />
+          <ChoiceGroup label="화면 테마" value={data.theme} options={["다크 테마", "라이트 테마", "시스템 설정에 따라 변경"]} onChange={(value) => update("theme", value)} onPreviewFocus={() => focusPreview("design-system")} />
+          <ChoiceGroup label="색상 조합" value={data.palette} options={["네온 블루 + 다크 네이비", "민트 + 네이비", "퍼플 + 블루", "레드 + 블랙", "직접 색상 입력"]} onChange={(value) => update("palette", value)} onPreviewFocus={() => focusPreview("design-system")} />
+          {data.palette === "직접 색상 입력" && <TextInput label="사용할 색상" value={data.customColors} onChange={(value) => update("customColors", value)} onPreviewFocus={() => focusPreview("design-system")} placeholder="예: #00C2FF, #071426, #FFFFFF" />}
+          <MoodPresetGroup value={resolveMoodPreset(data.moods, data.moodOther)} onChange={updateMoodPreset} onPreviewFocus={() => focusPreview("design-system")} />
+          <MultiChoice label="배경 효과" values={data.backgrounds} options={BACKGROUND_OPTIONS} other={data.backgroundOther} onToggle={(value) => toggle("backgrounds", value)} onOther={(value) => update("backgroundOther", value)} onPreviewFocus={() => focusPreview("design-system")} />
         </div>;
       case 9:
         return <div className="form-grid layout-grid">
-          <ChoiceGroup label="대회 기록 표시" value={data.competitionLayout} options={["타임라인", "카드 그리드", "세로 목록"]} onChange={(value) => update("competitionLayout", value)} />
-          <ChoiceGroup label="Skills 표시" value={data.skillLayout} options={["아이콘 카드와 배지", "태그", "진행도 표시", "단순 목록"]} onChange={(value) => update("skillLayout", value)} />
-          <ChoiceGroup label="프로젝트 카드 배치" value={data.portfolioColumns} options={["데스크톱 2열 · 모바일 1열", "데스크톱 3열 · 모바일 1열", "데스크톱 4열 · 모바일 2열"]} onChange={(value) => update("portfolioColumns", value)} />
-          <ChoiceGroup label="자세히 보기 동작" value={data.projectAction} options={["상세 팝업 열기", "별도 페이지로 이동", "외부 링크 열기", "버튼 표시 안 함"]} onChange={(value) => update("projectAction", value)} />
-          <TextInput label="Footer 문구" value={data.footerText} onChange={(value) => update("footerText", value)} placeholder="예: © 2026 Minjun's Portfolio. All rights reserved." />
-          <TextInput label="이메일" value={data.email} onChange={(value) => update("email", value)} placeholder="표시할 이메일" optional />
-          <TextInput label="GitHub 주소" value={data.githubUrl} onChange={(value) => update("githubUrl", value)} placeholder="https://github.com/..." optional />
-          <TextInput label="포트폴리오 주소" value={data.portfolioUrl} onChange={(value) => update("portfolioUrl", value)} placeholder="https://..." optional />
+          <ChoiceGroup label="대회 기록 표시" value={data.competitionLayout} options={["타임라인", "카드 그리드", "세로 목록"]} onChange={(value) => update("competitionLayout", value)} onPreviewFocus={() => focusPreview("competition-layout")} />
+          <ChoiceGroup label="Skills 표시" value={data.skillLayout} options={["아이콘 카드와 배지", "태그", "진행도 표시", "단순 목록"]} onChange={(value) => update("skillLayout", value)} onPreviewFocus={() => focusPreview("skills-layout")} />
+          {data.skillLayout === "진행도 표시" && <SkillLevelEditor skills={selectedSkills} levels={data.skillLevels} onChange={updateSkillLevel} onPreviewFocus={() => focusPreview("skills-layout")} />}
+          <ChoiceGroup label="프로젝트 카드 배치" value={data.portfolioColumns} options={["데스크톱 2열 · 모바일 1열", "데스크톱 3열 · 모바일 1열", "데스크톱 4열 · 모바일 2열"]} onChange={(value) => update("portfolioColumns", value)} onPreviewFocus={() => focusPreview("projects-layout")} />
+          <ChoiceGroup label="자세히 보기 동작" value={data.projectAction} options={["상세 팝업 열기", "별도 페이지로 이동", "외부 링크 열기", "버튼 표시 안 함"]} onChange={(value) => update("projectAction", value)} onPreviewFocus={() => focusPreview("project-action")} />
+          <TextInput label="Footer 문구" value={data.footerText} onChange={(value) => update("footerText", value)} onPreviewFocus={() => focusPreview("footer")} placeholder="예: © 2026 Minjun's Portfolio. All rights reserved." />
+          <TextInput label="이메일" value={data.email} onChange={(value) => update("email", value)} onPreviewFocus={() => focusPreview("contact-email")} placeholder="표시할 이메일" optional />
+          <TextInput label="GitHub 주소" value={data.githubUrl} onChange={(value) => update("githubUrl", value)} onPreviewFocus={() => focusPreview("contact-github")} placeholder="https://github.com/..." optional />
+          <TextInput label="포트폴리오 주소" value={data.portfolioUrl} onChange={(value) => update("portfolioUrl", value)} onPreviewFocus={() => focusPreview("contact-web")} placeholder="https://..." optional />
         </div>;
       default:
         return <div className="generate-summary">
           <div className="summary-count"><b>{completedCount}</b><span>/ 9단계<br />작성 완료</span></div>
-          <div><strong>{allComplete ? "Stitch 프롬프트를 만들 준비가 됐어요!" : "아직 작성하지 않은 단계가 있어요."}</strong><p>{allComplete ? `${data.competitions.length}개의 대회 기록과 ${data.projects.length}개의 프로젝트를 포함해 프롬프트를 완성합니다.` : "완료하지 않은 카드를 선택해 필수 내용을 입력해 주세요."}</p></div>
+          <div><strong>{allComplete ? "Stitch 프롬프트를 만들 준비가 됐어요!" : "아직 작성하지 않은 단계가 있어요."}</strong><p>{allComplete ? `${data.competitions.length}개의 대회 기록과 ${data.projects.length}개의 프로젝트가 한 페이지에 누적되었습니다.` : "완료하지 않은 단계를 선택해 필수 내용을 입력해 주세요."}</p></div>
         </div>;
     }
   };
 
+  if (appView === "landing") return <LandingScreen completedCount={completedCount} onShowWorkflow={() => setAppView("workflow")} />;
+  if (appView === "workflow") return <WorkflowScreen onBack={() => setAppView("landing")} onEnterBuilder={() => setAppView("builder")} />;
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-row"><div className="logo-mark" aria-hidden="true"><span /><span /><span /></div><div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>로봇 포트폴리오 프롬프트 빌더</h1></div></div>
-        <div className="header-actions"><span className="save-pill"><span className="save-dot" />{saveStatus}</span><button type="button" className="reset-button" onClick={reset}>처음부터</button><div className="top-progress" aria-label={`9단계 중 ${completedCount}단계 완료`}><span className="progress-copy"><b>{completedCount}</b> / 9 작성</span><div className="progress-track"><span style={{ width: `${(completedCount / 9) * 100}%` }} /></div></div></div>
+        <BrandLockup />
+        <div className="header-center"><span>입력</span><i>→</i><b>실시간 누적 미리보기</b></div>
+        <div className="header-actions">
+          <span className="save-pill"><span className="save-dot" />{saveStatus}</span>
+          <button type="button" className="workflow-button" onClick={() => setAppView("workflow")}>작업 흐름</button>
+          <button type="button" className="reset-button" onClick={reset}>처음부터</button>
+          <div className="top-progress" aria-label={`9단계 중 ${completedCount}단계 완료`}><span className="progress-copy"><b>{completedCount}</b> / 9 작성</span><div className="progress-track"><span style={{ width: `${(completedCount / 9) * 100}%` }} /></div></div>
+        </div>
       </header>
 
-      <section className="workspace" aria-label="로봇 포트폴리오 제작 단계 화이트보드">
-        <div className="board" style={{ width: boardWidth, height: boardHeight }}>
-          <div className="board-title"><span className="tape" /><p>나의 로봇 경험을 채우면 Stitch 디자인 프롬프트가 완성돼요!</p></div>
-          <svg className="connectors" width={boardWidth} height={boardHeight} viewBox={`0 0 ${boardWidth} ${boardHeight}`} aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{STEPS.slice(0, -1).map((item, index) => <path key={item.number} d={connectorPath(item, STEPS[index + 1])} className={`connector ${stepComplete(item.number, data) ? "complete" : index === current ? "active" : ""}`} markerEnd="url(#arrow)" />)}</svg>
-          {STEPS.map((item, index) => { const complete = stepComplete(item.number, data); return <button key={item.number} ref={(element) => { cardRefs.current[index] = element; }} type="button" className={`step-card ${item.color} ${index === current ? "selected" : ""} ${complete ? "completed" : ""}`} style={{ left: item.x, top: item.y }} onClick={() => setCurrent(index)} aria-current={index === current ? "step" : undefined} aria-label={`${item.number}단계 ${item.title}: ${complete ? "작성 완료" : "작성 필요"}`}><span className="pin" aria-hidden="true" /><span className="step-meta"><span className="step-number">STEP {String(item.number).padStart(2, "0")}</span><span className="phase">{item.phase}</span></span><span className="step-heading"><span className="step-icon" aria-hidden="true">{item.icon}</span><strong>{item.title}</strong></span><span className="step-summary">{item.summary}</span>{complete && <span className="complete-mark" aria-label="작성 완료">✓</span>}{index === current && <span className="current-label">지금 작성</span>}</button>; })}
-        </div>
-      </section>
+      <section className="split-workspace" aria-label="포트폴리오 프롬프트 작성 화면">
+        <aside className={`input-pane ${step.color}`} aria-live="polite">
+          <header className="input-pane-header">
+            <div className="step-title-row"><span className="panel-icon" aria-hidden="true">{step.icon}</span><div><p>{step.phase} · STEP {String(step.number).padStart(2, "0")}</p><h2>{step.title}</h2></div></div>
+            <span className={`step-state ${stepComplete(step.number, data) ? "complete" : ""}`}>{stepComplete(step.number, data) ? "✓ 작성 완료" : "작성 중"}</span>
+          </header>
 
-      <aside className={`focus-panel ${step.color}`} aria-live="polite">
-        <div className="panel-accent" />
-        <div className="panel-step"><span className="panel-icon" aria-hidden="true">{step.icon}</span><div><p>{step.phase} · STEP {String(step.number).padStart(2, "0")}</p><h2>{step.title}</h2><span className="step-tip">TIP. {step.tip}</span></div></div>
-        <div className="form-scroll">{renderStep()}</div>
-        <nav className="panel-nav" aria-label="단계 이동"><button type="button" onClick={() => move(-1)} disabled={current === 0}>← 이전</button><div className="dot-nav">{STEPS.map((item, index) => <button key={item.number} type="button" className={`${index === current ? "active" : ""} ${stepComplete(item.number, data) ? "done" : ""}`} onClick={() => setCurrent(index)} aria-label={`${item.number}단계로 이동`} />)}</div><button type="button" className="next-button" onClick={next} disabled={current < 9 ? !stepComplete(step.number, data) : !allComplete}>{current === 9 ? "프롬프트 만들기" : "저장하고 다음"} →</button>{current < 9 && !stepComplete(step.number, data) && <span className="nav-hint">필수 항목을 모두 작성하면 다음 단계로 이동할 수 있어요.</span>}</nav>
-      </aside>
+          <nav className="step-switcher" aria-label="작성 단계 바로가기">
+            {STEPS.map((item, index) => {
+              const complete = stepComplete(item.number, data);
+              return <button key={item.number} type="button" className={`${index === current ? "active" : ""} ${complete ? "done" : ""}`} onClick={() => selectStep(index)} aria-current={index === current ? "step" : undefined} aria-label={`${item.number}단계 ${item.title}로 이동`}><span>{complete ? "✓" : item.number}</span><small>{item.phase}</small></button>;
+            })}
+          </nav>
+
+          <div className="step-tip"><b>TIP</b><span>{step.tip}</span></div>
+          <div className="form-scroll">{renderStep()}</div>
+
+          <nav className="panel-nav" aria-label="단계 이동">
+            <button type="button" onClick={() => move(-1)} disabled={current === 0}>← 이전 단계</button>
+            <span className="nav-position">{String(current + 1).padStart(2, "0")} <i>/</i> 10</span>
+            <button type="button" className="next-button" onClick={next} disabled={current < 9 ? !stepComplete(step.number, data) : !allComplete}>{current === 9 ? "최종 프롬프트 보기" : "저장하고 다음"} →</button>
+            {current < 9 && !stepComplete(step.number, data) && <span className="nav-hint">필수 항목을 입력하면 다음 단계로 이동할 수 있어요.</span>}
+          </nav>
+        </aside>
+
+        <PortfolioPreview data={data} currentStep={step.number} focusTarget={previewFocus.key} focusRequest={previewFocus.request} />
+      </section>
 
       {showPrompt && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowPrompt(false)}><section className="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title"><header className="modal-header"><div><span className="stitch-badge">✦ GOOGLE STITCH READY</span><h2 id="prompt-title">로봇 포트폴리오 프롬프트가 완성됐어요</h2><p>학생이 작성한 문구와 대회 성장 기록을 포함한 최종 디자인 명세입니다.</p></div><button type="button" className="close-button" onClick={() => setShowPrompt(false)} aria-label="프롬프트 창 닫기">×</button></header><pre className="prompt-output">{prompt}</pre><footer className="modal-actions"><span>작성 내용은 이 브라우저에만 저장되며 코드나 GitHub에는 포함되지 않습니다.</span><div><button type="button" className="copy-button" onClick={copyPrompt}>{copied ? "✓ 복사 완료" : "프롬프트 복사"}</button><a href="https://stitch.withgoogle.com/" target="_blank" rel="noreferrer">Google Stitch 열기 ↗</a></div></footer></section></div>}
     </main>

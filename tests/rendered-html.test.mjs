@@ -29,5 +29,15 @@ test("renders development preview metadata", async () => {
     response.headers.get("content-type") ?? "",
     /^text\/html\b/i,
   );
-  assert.match(await response.text(), developmentPreviewMeta);
+  const html = await response.text();
+  assert.match(html, developmentPreviewMeta);
+  assert.match(html, /playwell-logo\.png/);
+  assert.match(html, /class="welcome-shell"/);
+  assert.match(html, /로봇·코딩의 경험을/);
+  assert.match(html, /작업 흐름 확인하기/);
+  assert.match(html, /PLAYWELL ROBOT PORTFOLIO LAB/);
+  assert.match(html, /🧠/);
+  assert.match(html, /✏️/);
+  assert.match(html, /🎨/);
+  assert.match(html, /⚙️/);
 });

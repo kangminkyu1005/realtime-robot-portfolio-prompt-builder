@@ -42,6 +42,7 @@ export type PortfolioData = {
   competitions: Competition[];
   skills: string[];
   skillOther: string;
+  skillLevels: Record<string, number>;
   awards: Award[];
   projects: Project[];
   theme: string;
@@ -121,14 +122,15 @@ export const INITIAL_DATA: PortfolioData = {
   competitions: [{ ...EMPTY_COMPETITION }],
   skills: [],
   skillOther: "",
+  skillLevels: {},
   awards: [{ ...EMPTY_AWARD }],
   projects: [{ ...EMPTY_PROJECT }],
-  theme: "다크 테마",
-  moods: ["미래적인", "기술적인", "깔끔한"],
+  theme: "라이트 테마",
+  moods: ["밝은 학생형"],
   moodOther: "",
-  palette: "네온 블루 + 다크 네이비",
+  palette: "민트 + 네이비",
   customColors: "",
-  backgrounds: ["은은한 회로 패턴", "그라데이션"],
+  backgrounds: ["은은한 회로 패턴"],
   backgroundOther: "",
   competitionLayout: "타임라인",
   skillLayout: "아이콘 카드와 배지",
@@ -150,6 +152,22 @@ export const SECTION_OPTIONS = [
   "Portfolio",
   "Contact",
 ];
+
+export function normalizeSections(values: string[] | undefined) {
+  const source = Array.isArray(values) ? values : INITIAL_DATA.sections;
+  const sections = source.reduce<string[]>((result, value) => {
+    const section = typeof value === "string" ? value.trim() : "";
+    if (SECTION_OPTIONS.includes(section) && !result.includes(section)) result.push(section);
+    return result;
+  }, []);
+
+  if (!sections.includes("Competition Journey")) {
+    const aboutIndex = sections.indexOf("About");
+    sections.splice(aboutIndex >= 0 ? aboutIndex + 1 : 0, 0, "Competition Journey");
+  }
+
+  return sections;
+}
 
 export const ROLE_OPTIONS = [
   "로봇 제작",
@@ -180,15 +198,44 @@ export const SKILL_OPTIONS = [
 ];
 
 export const MOOD_OPTIONS = [
-  "미래적인",
-  "기술적인",
-  "깔끔한",
-  "학생다운",
-  "전문적인",
-  "역동적인",
-  "미니멀한",
-  "친근한",
+  "미래 기술형",
+  "밝은 학생형",
+  "깔끔 전문형",
+  "역동 프로젝트형",
 ];
+
+const LEGACY_MOOD_GROUPS: Record<string, string[]> = {
+  "미래 기술형": ["미래적인", "기술적인"],
+  "밝은 학생형": ["학생다운", "친근한"],
+  "깔끔 전문형": ["깔끔한", "전문적인", "미니멀한"],
+  "역동 프로젝트형": ["역동적인"],
+};
+
+const MOOD_KEYWORDS: Record<string, RegExp> = {
+  "미래 기술형": /미래|기술|사이버|네온|로봇|테크/i,
+  "밝은 학생형": /학생|친근|밝은|재미|귀여|놀이/i,
+  "깔끔 전문형": /깔끔|전문|미니멀|정돈|단정|심플/i,
+  "역동 프로젝트형": /역동|활동|움직|강렬|프로젝트/i,
+};
+
+export function resolveMoodPreset(values: string[] | undefined, other = "") {
+  const selected = values ?? [];
+  const existingPreset = selected.find((value) => MOOD_OPTIONS.includes(value));
+  if (existingPreset) return existingPreset;
+
+  let bestPreset = "밝은 학생형";
+  let bestScore = 0;
+  for (const preset of MOOD_OPTIONS) {
+    const legacyScore = LEGACY_MOOD_GROUPS[preset].filter((value) => selected.includes(value)).length;
+    const customScore = other.trim() && MOOD_KEYWORDS[preset].test(other) ? 1 : 0;
+    const score = legacyScore + customScore;
+    if (score > bestScore) {
+      bestPreset = preset;
+      bestScore = score;
+    }
+  }
+  return bestPreset;
+}
 
 export const BACKGROUND_OPTIONS = [
   "은은한 회로 패턴",
@@ -206,7 +253,7 @@ export const STEPS: Step[] = [
   { number: 5, phase: "대회", title: "대회 기록", summary: "역할과 성장 과정을 기록해요.", tip: "대회 결과보다 내가 한 일과 다음에 개선할 점이 중요해요.", icon: "🏁", color: "purple", x: 1175, y: 110 },
   { number: 6, phase: "역량", title: "기술과 수상", summary: "기술은 선택하고 수상은 추가해요.", tip: "기술은 여러 개 선택할 수 있고 목록에 없으면 직접 추가할 수 있어요.", icon: "🏆", color: "purple", x: 1175, y: 410 },
   { number: 7, phase: "프로젝트", title: "작품 추가", summary: "로봇 프로젝트를 카드로 정리해요.", tip: "무엇을 만들었는지와 어떤 기술을 사용했는지를 구체적으로 적어요.", icon: "🛠️", color: "blue", x: 895, y: 410 },
-  { number: 8, phase: "디자인", title: "스타일 선택", summary: "분위기·색상·배경을 골라요.", tip: "서로 어울리는 분위기와 색상을 2~3개 중심으로 선택하세요.", icon: "🎨", color: "blue", x: 615, y: 410 },
+  { number: 8, phase: "디자인", title: "스타일 선택", summary: "분위기·색상·배경을 골라요.", tip: "서로 겹치지 않는 대표 분위기 하나를 고르면 전체 디자인에 일관되게 적용돼요.", icon: "🎨", color: "blue", x: 615, y: 410 },
   { number: 9, phase: "레이아웃", title: "화면과 Footer", summary: "표시 방식과 마지막 문구를 정해요.", tip: "반응형·고정 메뉴·부드러운 이동은 자동으로 프롬프트에 포함돼요.", icon: "🖥️", color: "blue", x: 335, y: 410 },
   { number: 10, phase: "완성", title: "Stitch 프롬프트", summary: "입력 내용을 하나로 완성해요.", tip: "내용을 확인한 뒤 복사해 Google Stitch에 붙여넣으세요.", icon: "✨", color: "coral", x: 55, y: 410 },
 ];
@@ -226,7 +273,7 @@ export function projectComplete(item: Project) {
   return hasText(item.title) && hasText(item.description) && hasText(item.technologies);
 }
 
-export function stepComplete(stepNumber: number, data: PortfolioData) {
+export function stepComplete(stepNumber: number, data: PortfolioData): boolean {
   switch (stepNumber) {
     case 1:
       return hasText(data.studentName) && hasText(data.portfolioName) && hasText(data.logoName) && hasText(data.language);
@@ -281,9 +328,15 @@ function projectBlock(items: Project[]) {
 }
 
 export function createStitchPrompt(data: PortfolioData) {
-  const sections = joinWithOther(data.sections, data.sectionOther);
+  const orderedSections = [...normalizeSections(data.sections), data.sectionOther.trim()].filter(Boolean);
+  const sections = orderedSections.map((section, index) => `${index + 1}. ${section}`).join(" → ");
   const skills = joinWithOther(data.skills, data.skillOther);
-  const moods = joinWithOther(data.moods, data.moodOther);
+  const skillNames = [...data.skills, data.skillOther.trim()].filter(Boolean);
+  const skillLevels = skillNames.map((skill) => {
+    const level = Math.min(5, Math.max(1, Math.round(data.skillLevels?.[skill] ?? 3)));
+    return `- ${skill}: ${level}/5단계`;
+  }).join("\n");
+  const mood = resolveMoodPreset(data.moods, data.moodOther);
   const backgrounds = joinWithOther(data.backgrounds, data.backgroundOther);
   const palette = data.palette === "직접 색상 입력" ? data.customColors : data.palette;
   const textRule = data.textPolicy === "입력한 문구를 그대로 사용"
@@ -313,8 +366,9 @@ export function createStitchPrompt(data: PortfolioData) {
 ${textRule}
 
 ## 3. 메뉴 및 영역 구성
-- 표시할 영역: ${sections}
+- 표시할 영역 및 생성 순서: ${sections}
 - 상단에는 고정형 내비게이션 바를 만들고 왼쪽에 “${data.logoName}” 로고와 작은 로봇 아이콘을 넣어 주세요.
+- 위에 적힌 순서를 바꾸지 말고 상단 메뉴와 본문 섹션 양쪽에 동일하게 적용해 주세요.
 - 선택한 영역 이름을 상단 메뉴로 사용하고, 각 메뉴를 클릭하면 페이지 안의 해당 영역으로 부드럽게 이동하게 해 주세요.
 - Competition Journey 영역은 대회 결과만 나열하지 말고 역할·성찰·성장 과정이 드러나도록 구성해 주세요.
 
@@ -335,6 +389,7 @@ ${competitionBlock(data.competitions)}
 - 표시 방식: ${data.skillLayout}
 - 기술과 역량: ${skills}
 - 아이콘, 태그, 카드 또는 배지를 활용해 한눈에 알아볼 수 있게 해 주세요.
+${data.skillLayout === "진행도 표시" ? `- 기술별 숙련도는 아래 입력값을 그대로 사용해 주세요. 임의의 수치로 바꾸지 마세요.\n${skillLevels || "- 입력한 기술 없음"}` : ""}
 
 ## 7. Certifications & Awards
 ${awardBlock(data.awards)}
@@ -349,7 +404,7 @@ ${projectBlock(data.projects)}
 
 ## 9. 디자인 의도
 - 테마: ${data.theme}
-- 디자인 분위기: ${moods}
+- 디자인 분위기 프리셋: ${mood}
 - 색상: ${palette}
 - 배경 효과: ${backgrounds || "배경 효과 없음"}
 - 로봇, 코딩, 미래 기술과 창의적인 프로젝트의 느낌을 주되 너무 복잡하거나 어렵게 보이지 않게 해 주세요.
@@ -377,4 +432,3 @@ ${projectBlock(data.projects)}
 5. 메뉴 이동과 자세히 보기 동작을 클릭 가능한 프로토타입으로 연결해 주세요.
 6. 시각적으로 멋진 것뿐 아니라 처음 보는 사람도 학생의 경험과 성장 과정을 쉽게 이해할 수 있는 디자인을 우선해 주세요.`;
 }
-

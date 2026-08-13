@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "로봇 포트폴리오 프롬프트 빌더",
-  description: "학생의 로봇·코딩 경험과 대회 성장 기록을 Google Stitch용 웹앱 프롬프트로 만드는 단계별 워크플로우",
+  title: "실시간 로봇 포트폴리오 프롬프트 빌더",
+  description: "학생의 입력이 실제 포트폴리오 위치에 누적되는 모습을 확인하며 Google Stitch용 웹앱 프롬프트를 만드는 플레이웰 학습 도구",
   other: {
     "codex-preview": "development",
   },
