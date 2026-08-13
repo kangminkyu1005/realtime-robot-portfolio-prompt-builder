@@ -35,4 +35,8 @@ test("renders development preview metadata", async () => {
   assert.match(html, /data-preview-key="competition-section"/);
   assert.match(html, /다음에 보완할 점/);
   assert.match(html, /누적된 포트폴리오 전체 페이지/);
+  assert.match(html, /mood-clean/);
+  assert.match(html, /background-circuit/);
+  assert.match(html, /skills-icon-cards/);
+  assert.match(html, /data-skill-layout="아이콘 카드와 배지"/);
 });

@@ -127,6 +127,43 @@ function TextInput({ label, value, onChange, placeholder, multiline = false, opt
   );
 }
 
+function SkillLevelEditor({ skills, levels, onChange, onPreviewFocus }: {
+  skills: string[];
+  levels: Record<string, number>;
+  onChange: (skill: string, level: number) => void;
+  onPreviewFocus?: () => void;
+}) {
+  return (
+    <div className="input-block wide skill-level-editor" onFocusCapture={onPreviewFocus}>
+      <span className="input-title">기술별 숙련도<em className="optional">1~5단계</em></span>
+      <p>진행도에 표시할 실제 수준을 선택하세요. 선택하지 않은 기술은 기본 3단계로 표시됩니다.</p>
+      {skills.length ? skills.map((skill) => {
+        const level = levels[skill] ?? 3;
+        return (
+          <div className="skill-level-row" key={skill}>
+            <b>{skill}</b>
+            <div className="skill-level-buttons" role="radiogroup" aria-label={`${skill} 숙련도`}>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={level === value}
+                  className={level === value ? "selected" : ""}
+                  onClick={() => onChange(skill, value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            <span>{level}단계</span>
+          </div>
+        );
+      }) : <div className="info-note"><b>안내</b><span>6단계에서 기술과 역량을 먼저 선택하면 숙련도를 설정할 수 있어요.</span></div>}
+    </div>
+  );
+}
+
 export default function Home() {
   const [current, setCurrent] = useState(0);
   const [data, setData] = useState<PortfolioData>(INITIAL_DATA);
@@ -152,6 +189,7 @@ export default function Home() {
             competitions: parsed.competitions?.length ? parsed.competitions : INITIAL_DATA.competitions,
             awards: parsed.awards?.length ? parsed.awards : INITIAL_DATA.awards,
             projects: parsed.projects?.length ? parsed.projects : INITIAL_DATA.projects,
+            skillLevels: parsed.skillLevels ?? INITIAL_DATA.skillLevels,
           });
         }
       } catch {
@@ -186,6 +224,17 @@ export default function Home() {
   const update = <K extends keyof PortfolioData>(key: K, value: PortfolioData[K]) => setData((previous) => ({ ...previous, [key]: value }));
   const toggle = (key: "sections" | "skills" | "moods" | "backgrounds", value: string) => {
     if (key === "sections" && value === "Competition Journey") return;
+    if (key === "backgrounds") {
+      if (value === "배경 효과 없음") {
+        update("backgrounds", data.backgrounds.includes(value) ? [] : [value]);
+        return;
+      }
+      const activeBackgrounds = data.backgrounds.filter((item) => item !== "배경 효과 없음");
+      update("backgrounds", activeBackgrounds.includes(value)
+        ? activeBackgrounds.filter((item) => item !== value)
+        : [...activeBackgrounds, value]);
+      return;
+    }
     update(key, data[key].includes(value) ? data[key].filter((item) => item !== value) : [...data[key], value]);
   };
   const selectStep = (index: number) => {
@@ -198,6 +247,8 @@ export default function Home() {
   const updateCompetition = (id: string, key: string, value: string | string[]) => update("competitions", data.competitions.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const updateAward = (id: string, key: string, value: string) => update("awards", data.awards.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const updateProject = (id: string, key: string, value: string) => update("projects", data.projects.map((item) => item.id === id ? { ...item, [key]: value } : item));
+  const updateSkillLevel = (skill: string, level: number) => update("skillLevels", { ...data.skillLevels, [skill]: level });
+  const selectedSkills = [...data.skills, data.skillOther.trim()].filter(Boolean);
 
   const addCompetition = () => {
     const id = uid("competition");
@@ -315,6 +366,7 @@ export default function Home() {
         return <div className="form-grid layout-grid">
           <ChoiceGroup label="대회 기록 표시" value={data.competitionLayout} options={["타임라인", "카드 그리드", "세로 목록"]} onChange={(value) => update("competitionLayout", value)} onPreviewFocus={() => focusPreview("competition-layout")} />
           <ChoiceGroup label="Skills 표시" value={data.skillLayout} options={["아이콘 카드와 배지", "태그", "진행도 표시", "단순 목록"]} onChange={(value) => update("skillLayout", value)} onPreviewFocus={() => focusPreview("skills-layout")} />
+          {data.skillLayout === "진행도 표시" && <SkillLevelEditor skills={selectedSkills} levels={data.skillLevels} onChange={updateSkillLevel} onPreviewFocus={() => focusPreview("skills-layout")} />}
           <ChoiceGroup label="프로젝트 카드 배치" value={data.portfolioColumns} options={["데스크톱 2열 · 모바일 1열", "데스크톱 3열 · 모바일 1열", "데스크톱 4열 · 모바일 2열"]} onChange={(value) => update("portfolioColumns", value)} onPreviewFocus={() => focusPreview("projects-layout")} />
           <ChoiceGroup label="자세히 보기 동작" value={data.projectAction} options={["상세 팝업 열기", "별도 페이지로 이동", "외부 링크 열기", "버튼 표시 안 함"]} onChange={(value) => update("projectAction", value)} onPreviewFocus={() => focusPreview("project-action")} />
           <TextInput label="Footer 문구" value={data.footerText} onChange={(value) => update("footerText", value)} onPreviewFocus={() => focusPreview("footer")} placeholder="예: © 2026 Minjun's Portfolio. All rights reserved." />

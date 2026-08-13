@@ -42,6 +42,7 @@ export type PortfolioData = {
   competitions: Competition[];
   skills: string[];
   skillOther: string;
+  skillLevels: Record<string, number>;
   awards: Award[];
   projects: Project[];
   theme: string;
@@ -121,6 +122,7 @@ export const INITIAL_DATA: PortfolioData = {
   competitions: [{ ...EMPTY_COMPETITION }],
   skills: [],
   skillOther: "",
+  skillLevels: {},
   awards: [{ ...EMPTY_AWARD }],
   projects: [{ ...EMPTY_PROJECT }],
   theme: "라이트 테마",
@@ -283,6 +285,11 @@ function projectBlock(items: Project[]) {
 export function createStitchPrompt(data: PortfolioData) {
   const sections = joinWithOther(data.sections, data.sectionOther);
   const skills = joinWithOther(data.skills, data.skillOther);
+  const skillNames = [...data.skills, data.skillOther.trim()].filter(Boolean);
+  const skillLevels = skillNames.map((skill) => {
+    const level = Math.min(5, Math.max(1, Math.round(data.skillLevels?.[skill] ?? 3)));
+    return `- ${skill}: ${level}/5단계`;
+  }).join("\n");
   const moods = joinWithOther(data.moods, data.moodOther);
   const backgrounds = joinWithOther(data.backgrounds, data.backgroundOther);
   const palette = data.palette === "직접 색상 입력" ? data.customColors : data.palette;
@@ -335,6 +342,7 @@ ${competitionBlock(data.competitions)}
 - 표시 방식: ${data.skillLayout}
 - 기술과 역량: ${skills}
 - 아이콘, 태그, 카드 또는 배지를 활용해 한눈에 알아볼 수 있게 해 주세요.
+${data.skillLayout === "진행도 표시" ? `- 기술별 숙련도는 아래 입력값을 그대로 사용해 주세요. 임의의 수치로 바꾸지 마세요.\n${skillLevels || "- 입력한 기술 없음"}` : ""}
 
 ## 7. Certifications & Awards
 ${awardBlock(data.awards)}

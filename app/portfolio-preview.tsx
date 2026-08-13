@@ -25,6 +25,31 @@ const PALETTE_VALUES: Record<string, [string, string, string]> = {
   "레드 + 블랙": ["#ff625f", "rgba(255, 98, 95, .16)", "#ffb44d"],
 };
 
+const MOOD_CLASSES: Record<string, string> = {
+  "미래적인": "mood-futuristic",
+  "기술적인": "mood-technical",
+  "깔끔한": "mood-clean",
+  "학생다운": "mood-student",
+  "전문적인": "mood-professional",
+  "역동적인": "mood-dynamic",
+  "미니멀한": "mood-minimal",
+  "친근한": "mood-friendly",
+};
+
+const BACKGROUND_CLASSES: Record<string, string> = {
+  "은은한 회로 패턴": "background-circuit",
+  "그라데이션": "background-gradient",
+  "빛나는 포인트": "background-glow",
+  "격자 패턴": "background-grid",
+};
+
+const SKILL_LAYOUT_CLASSES: Record<string, string> = {
+  "아이콘 카드와 배지": "skills-icon-cards",
+  "태그": "skills-tags",
+  "진행도 표시": "skills-progress",
+  "단순 목록": "skills-simple-list",
+};
+
 const PREVIEW_NAVIGATION = [
   { key: "hero", label: "처음" },
   { key: "about-section", label: "소개" },
@@ -54,6 +79,37 @@ function previewTheme(data: PortfolioData): PreviewTheme {
     "--preview-accent-soft": customColors[0] ? `${accent}26` : fallback[1],
     "--preview-secondary": secondary,
   };
+}
+
+function previewMoodClasses(data: PortfolioData) {
+  const classes = data.moods.map((mood) => MOOD_CLASSES[mood]).filter(Boolean);
+  if (data.moodOther.trim()) classes.push("mood-custom");
+  return classes;
+}
+
+function previewBackgroundClasses(data: PortfolioData) {
+  if (!data.backgrounds.length || data.backgrounds.includes("배경 효과 없음")) return ["background-none"];
+  const classes = data.backgrounds.map((background) => BACKGROUND_CLASSES[background]).filter(Boolean);
+  if (data.backgroundOther.trim()) classes.push("background-custom");
+  return classes.length ? classes : ["background-none"];
+}
+
+function previewThemeClass(theme: string) {
+  if (theme === "라이트 테마") return "light";
+  if (theme === "시스템 설정에 따라 변경") return "system";
+  return "dark";
+}
+
+function skillLevel(data: PortfolioData, skill: string) {
+  return Math.min(5, Math.max(1, Math.round(data.skillLevels?.[skill] ?? 3)));
+}
+
+function skillGlyph(skill: string, index: number) {
+  if (/Python|Coding|Code|C\b/i.test(skill)) return "</>";
+  if (/Motor|Sensor|Robot/i.test(skill)) return "⚙";
+  if (/AI|Web/i.test(skill)) return "AI";
+  if (/Team|Problem|Presentation|Instruction/i.test(skill)) return "◆";
+  return String(index + 1).padStart(2, "0");
 }
 
 function EmptyValue({ children }: { children: ReactNode }) {
@@ -249,6 +305,9 @@ function CompetitionSection({ data, focusTarget }: { data: PortfolioData; focusT
 function SkillsSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
   const skills = [...data.skills, data.skillOther].filter(Boolean);
   const awards = data.awards.filter((award) => award.competition.trim() || award.result.trim());
+  const layoutClass = SKILL_LAYOUT_CLASSES[data.skillLayout] ?? SKILL_LAYOUT_CLASSES["아이콘 카드와 배지"];
+  const skillItems = skills.length ? skills : ["Robot Building", "Coding", "Problem Solving", "Teamwork"];
+  const showProgress = data.skillLayout === "진행도 표시";
 
   return (
     <section
@@ -257,10 +316,21 @@ function SkillsSection({ data, focusTarget }: { data: PortfolioData; focusTarget
     >
       <div className="page-section-heading"><span>SKILLS & AWARDS</span><h3>배운 기술과 값진 결과를 한눈에</h3></div>
       <div className={`skills-layout ${focusClass(focusTarget, "skills-layout")}`} data-preview-key="skills-layout">
-        <div className={`skill-cloud ${focusClass(focusTarget, "skills-list")}`} data-preview-key="skills-list">
-          {(skills.length ? skills : ["Robot Building", "Coding", "Problem Solving", "Teamwork"]).slice(0, 10).map((skill, index) => (
-            <span key={`${skill}-${index}`} className={!skills.length ? "is-placeholder" : ""}><i>{String(index + 1).padStart(2, "0")}</i>{skill}</span>
-          ))}
+        <div className={`skill-cloud ${layoutClass} ${focusClass(focusTarget, "skills-list")}`} data-preview-key="skills-list" data-skill-layout={data.skillLayout}>
+          {skillItems.slice(0, 10).map((skill, index) => {
+            const level = skillLevel(data, skill);
+            return (
+              <span
+                key={`${skill}-${index}`}
+                className={`skill-item ${!skills.length ? "is-placeholder" : ""}`}
+                aria-label={showProgress ? `${skill} 숙련도 ${level}/5단계` : undefined}
+              >
+                <i aria-hidden="true">{skillGlyph(skill, index)}</i>
+                <span className="skill-label"><b>{skill}</b>{showProgress && <small>{level}/5</small>}</span>
+                {showProgress && <span className="skill-meter" aria-hidden="true"><span style={{ width: `${level * 20}%` }} /></span>}
+              </span>
+            );
+          })}
         </div>
         <div className="award-stack">
           <span className="award-icon">★</span>
@@ -281,10 +351,10 @@ function SkillsSection({ data, focusTarget }: { data: PortfolioData; focusTarget
 }
 
 function ProjectsSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
-  const columnsClass = data.portfolioColumns.includes("2열")
-    ? "project-columns-2"
-    : data.portfolioColumns.includes("4열")
-      ? "project-columns-4"
+  const columnsClass = data.portfolioColumns.startsWith("데스크톱 4열")
+    ? "project-columns-4"
+    : data.portfolioColumns.startsWith("데스크톱 2열")
+      ? "project-columns-2"
       : "project-columns-3";
 
   return (
@@ -351,8 +421,14 @@ export default function PortfolioPreview({ data, currentStep, focusTarget, focus
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const navigation = [...data.sections, data.sectionOther].filter(Boolean).slice(0, 7);
-  const lightTheme = data.theme === "라이트 테마";
   const annotation = annotationText(focusTarget);
+  const canvasClasses = [
+    "portfolio-canvas",
+    previewThemeClass(data.theme),
+    ...previewMoodClasses(data),
+    ...previewBackgroundClasses(data),
+    focusTarget === "design-system" ? "design-focus" : "",
+  ].filter(Boolean).join(" ");
 
   const scrollToTarget = useCallback((target: string, behavior: ScrollBehavior = "smooth") => {
     const scroller = scrollRef.current;
@@ -408,7 +484,7 @@ export default function PortfolioPreview({ data, currentStep, focusTarget, focus
         <div className="browser-bar" aria-hidden="true"><div><i /><i /><i /></div><span>portfolio.preview</span><b>↗</b></div>
         <div
           ref={canvasRef}
-          className={`portfolio-canvas ${lightTheme ? "light" : "dark"} ${focusTarget === "design-system" ? "design-focus" : ""}`}
+          className={canvasClasses}
           style={previewTheme(data)}
           data-preview-key="design-system"
         >
