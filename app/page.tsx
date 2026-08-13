@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useState, useEffect } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   BACKGROUND_OPTIONS,
   EMPTY_AWARD,
@@ -14,6 +15,7 @@ import {
   SKILL_OPTIONS,
   STEPS,
   createStitchPrompt,
+  normalizeSections,
   resolveMoodPreset,
   stepComplete,
 } from "./workflow";
@@ -21,6 +23,47 @@ import PortfolioPreview from "./portfolio-preview";
 import type { PortfolioData } from "./workflow";
 
 const STORAGE_KEY = "robot-portfolio-prompt-builder-v1";
+
+type AppView = "landing" | "workflow" | "builder";
+
+const CREATION_WORKFLOW = [
+  {
+    number: "01",
+    icon: "🧠",
+    iconLabel: "뇌",
+    title: "아이디어 구상",
+    description: "웹 앱의 목적과 전체 작업 흐름을 먼저 정리해요.",
+    meta: "목적 · 사용자 · 워크플로우",
+    color: "yellow",
+  },
+  {
+    number: "02",
+    icon: "✏️",
+    iconLabel: "연필",
+    title: "프롬프트 작성",
+    description: "디자인과 웹앱에 필요한 내용을 단계별로 작성해요.",
+    meta: "디자인 프롬프트 · 웹앱 프롬프트",
+    color: "mint",
+  },
+  {
+    number: "03",
+    icon: "🎨",
+    iconLabel: "페인트 팔레트",
+    title: "디자인 생성",
+    description: "AI Stitch에서 포트폴리오 화면 디자인을 만들어요.",
+    meta: "AI STITCH · UI/UX 디자인",
+    color: "blue",
+  },
+  {
+    number: "04",
+    icon: "⚙️",
+    iconLabel: "기어",
+    title: "기능 구현",
+    description: "AI Studio에서 실제로 동작하는 웹앱 기능을 연결해요.",
+    meta: "AI STUDIO · 실제 웹앱 기능",
+    color: "coral",
+  },
+];
 
 const STEP_PREVIEW_TARGETS: Record<number, string> = {
   1: "brand",
@@ -105,6 +148,189 @@ function MultiChoice({ label, values, options, other, onToggle, onOther, locked 
         onChange={(event) => onOther(event.target.value)}
         placeholder="기타 항목이 있다면 직접 입력하세요."
       />
+    </div>
+  );
+}
+
+function BrandLockup({ heading = "포트폴리오 프롬프트 빌더" }: { heading?: string }) {
+  return (
+    <div className="brand-row">
+      <Image className="playwell-logo" src="/playwell-logo.png" alt="playwell" width={151} height={40} priority unoptimized />
+      <div className="brand-divider" />
+      <div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>{heading}</h1></div>
+    </div>
+  );
+}
+
+function LandingScreen({ completedCount, onShowWorkflow }: { completedCount: number; onShowWorkflow: () => void }) {
+  return (
+    <main className="welcome-shell">
+      <header className="welcome-header">
+        <BrandLockup />
+        <span className="welcome-save-status"><i /> 입력 내용은 이 브라우저에 자동 저장됩니다</span>
+      </header>
+
+      <section className="welcome-hero" aria-labelledby="welcome-title">
+        <div className="welcome-copy">
+          <span className="welcome-kicker"><i /> PLAYWELL ROBOT PORTFOLIO LAB</span>
+          <h2 id="welcome-title">로봇·코딩의 경험을<br /><em>하나의 포트폴리오로</em></h2>
+          <p>질문에 답하면 입력한 내용이 실제 포트폴리오 화면에 실시간으로 쌓이고, 마지막에는 AI Stitch에서 사용할 완성형 프롬프트가 만들어집니다.</p>
+          <div className="welcome-actions">
+            <button type="button" className="welcome-primary" onClick={onShowWorkflow}>작업 흐름 확인하기 <span>→</span></button>
+            <small>시작하기 전에 4단계 제작 과정을 먼저 보여드려요.</small>
+          </div>
+          <div className="welcome-facts" aria-label="빌더 특징">
+            <span><b>10</b> 단계별 질문</span>
+            <span><b>LIVE</b> 누적 미리보기</span>
+            <span><b>{completedCount}</b> / 9 작성 완료</span>
+          </div>
+        </div>
+
+        <div className="welcome-visual" aria-label="포트폴리오가 만들어지는 과정 미리보기">
+          <div className="welcome-orbit orbit-a" />
+          <div className="welcome-orbit orbit-b" />
+          <div className="welcome-browser-card">
+            <div className="welcome-browser-bar"><span><i /><i /><i /></span><b>portfolio.preview</b></div>
+            <div className="welcome-browser-body">
+              <div className="welcome-mini-nav"><b>R</b><span>PLAYWELL LAB</span><i>LIVE</i></div>
+              <div className="welcome-mini-copy"><small>MY ROBOT JOURNEY</small><strong>아이디어가<br />화면이 되는 순간</strong><span>입력 → 미리보기 → 프롬프트</span></div>
+              <div className="welcome-mini-robot" aria-hidden="true"><i /><i /><b /></div>
+            </div>
+          </div>
+          {CREATION_WORKFLOW.map((item, index) => (
+            <div className={`floating-tool tool-${index + 1} ${item.color}`} key={item.title} aria-hidden="true"><span>{item.icon}</span><b>{item.number}</b></div>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function WorkflowScreen({ onBack, onEnterBuilder }: { onBack: () => void; onEnterBuilder: () => void }) {
+  return (
+    <main className="workflow-shell">
+      <header className="welcome-header workflow-header">
+        <BrandLockup heading="포트폴리오 제작 워크플로우" />
+        <button type="button" className="workflow-back" onClick={onBack}>← 메인으로</button>
+      </header>
+
+      <section className="workflow-content" aria-labelledby="workflow-title">
+        <div className="workflow-heading">
+          <span>HOW IT WORKS</span>
+          <h2 id="workflow-title">아이디어에서 실제 웹앱까지,<br />네 가지 도구로 완성해요</h2>
+          <p>프롬프트 빌더는 앞의 두 단계를 정리하고, AI 제작 도구로 자연스럽게 이어지도록 설계되었습니다.</p>
+        </div>
+
+        <ol className="workflow-cards">
+          {CREATION_WORKFLOW.map((item, index) => (
+            <li className={`workflow-card ${item.color}`} key={item.title}>
+              <span className="workflow-number">STEP {item.number}</span>
+              <div className="workflow-tool-image" role="img" aria-label={`${item.iconLabel} 도구 이미지`}><span>{item.icon}</span><i /></div>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <b>{item.meta}</b>
+              {index < CREATION_WORKFLOW.length - 1 && <span className="workflow-connector" aria-hidden="true">→</span>}
+            </li>
+          ))}
+        </ol>
+
+        <div className="workflow-cta">
+          <div><span>READY TO BUILD?</span><strong>이제 내 로봇 포트폴리오를 시작해 볼까요?</strong></div>
+          <button type="button" onClick={onEnterBuilder}>포트폴리오 만들기 <span>→</span></button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function SectionOrderEditor({ values, options, other, onToggle, onOther, onReorder, onPreviewFocus }: {
+  values: string[];
+  options: string[];
+  other: string;
+  onToggle: (value: string) => void;
+  onOther: (value: string) => void;
+  onReorder: (values: string[]) => void;
+  onPreviewFocus?: () => void;
+}) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  const moveSection = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= values.length || to >= values.length) return;
+    const next = [...values];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onReorder(next);
+    onPreviewFocus?.();
+  };
+
+  const sectionAtPoint = (event: ReactPointerEvent<HTMLLIElement>) => {
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLLIElement>("[data-section-name]");
+    return target?.dataset.sectionName ?? null;
+  };
+
+  const finishPointerDrag = (event: ReactPointerEvent<HTMLLIElement>) => {
+    const target = sectionAtPoint(event);
+    if (dragging && target) moveSection(values.indexOf(dragging), values.indexOf(target));
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setDragging(null);
+    setDropTarget(null);
+  };
+
+  return (
+    <div className="input-block wide section-order-editor" onFocusCapture={onPreviewFocus}>
+      <span className="input-title">포트폴리오에 표시할 영역<em>복수 선택</em></span>
+      <div className="multi-pills section-choice-pills">
+        {options.map((option) => {
+          const active = values.includes(option);
+          const required = option === "Competition Journey";
+          return (
+            <button
+              key={option}
+              type="button"
+              className={active ? "selected" : ""}
+              onClick={() => !required && onToggle(option)}
+              aria-pressed={active}
+              aria-disabled={required}
+            >
+              {active ? "✓ " : ""}{option}{required ? " · 필수" : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="section-order-heading"><div><b>표시 순서</b><span>카드를 드래그하거나 화살표로 순서를 바꾸세요.</span></div><small>{values.length}개 영역</small></div>
+      <ol className="section-order-list" aria-label="선택한 포트폴리오 영역 순서">
+        {values.map((section, index) => (
+          <li
+            key={section}
+            data-section-name={section}
+            className={`${dragging === section ? "dragging" : ""} ${dropTarget === section ? "drop-target" : ""}`}
+            onPointerDown={(event) => {
+              if ((event.target as HTMLElement).closest("button")) return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setDragging(section);
+            }}
+            onPointerMove={(event) => {
+              if (!dragging) return;
+              const target = sectionAtPoint(event);
+              if (target && target !== dragging) setDropTarget(target);
+            }}
+            onPointerUp={finishPointerDrag}
+            onPointerCancel={() => { setDragging(null); setDropTarget(null); }}
+          >
+            <span className="drag-handle" aria-hidden="true">⠿</span>
+            <i>{String(index + 1).padStart(2, "0")}</i>
+            <b>{section}</b>
+            {section === "Competition Journey" && <small>필수</small>}
+            <div className="order-buttons">
+              <button type="button" onClick={() => moveSection(index, index - 1)} disabled={index === 0} aria-label={`${section} 위로 이동`}>↑</button>
+              <button type="button" onClick={() => moveSection(index, index + 1)} disabled={index === values.length - 1} aria-label={`${section} 아래로 이동`}>↓</button>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <input className="other-input" value={other} onChange={(event) => onOther(event.target.value)} placeholder="기타 항목이 있다면 입력하세요. 마지막 영역에 추가됩니다." />
     </div>
   );
 }
@@ -200,6 +426,7 @@ function SkillLevelEditor({ skills, levels, onChange, onPreviewFocus }: {
 }
 
 export default function Home() {
+  const [appView, setAppView] = useState<AppView>("landing");
   const [current, setCurrent] = useState(0);
   const [data, setData] = useState<PortfolioData>(INITIAL_DATA);
   const [hydrated, setHydrated] = useState(false);
@@ -222,6 +449,7 @@ export default function Home() {
           setData({
             ...INITIAL_DATA,
             ...parsed,
+            sections: normalizeSections(parsed.sections),
             competitions: parsed.competitions?.length ? parsed.competitions : INITIAL_DATA.competitions,
             awards: parsed.awards?.length ? parsed.awards : INITIAL_DATA.awards,
             projects: parsed.projects?.length ? parsed.projects : INITIAL_DATA.projects,
@@ -262,18 +490,22 @@ export default function Home() {
   const update = <K extends keyof PortfolioData>(key: K, value: PortfolioData[K]) => setData((previous) => ({ ...previous, [key]: value }));
   const toggle = (key: "sections" | "skills" | "backgrounds", value: string) => {
     if (key === "sections" && value === "Competition Journey") return;
-    if (key === "backgrounds") {
-      if (value === "배경 효과 없음") {
-        update("backgrounds", data.backgrounds.includes(value) ? [] : [value]);
-        return;
+    setData((previous) => {
+      if (key === "backgrounds") {
+        if (value === "배경 효과 없음") {
+          return { ...previous, backgrounds: previous.backgrounds.includes(value) ? [] : [value] };
+        }
+        const activeBackgrounds = previous.backgrounds.filter((item) => item !== "배경 효과 없음");
+        return {
+          ...previous,
+          backgrounds: activeBackgrounds.includes(value)
+            ? activeBackgrounds.filter((item) => item !== value)
+            : [...activeBackgrounds, value],
+        };
       }
-      const activeBackgrounds = data.backgrounds.filter((item) => item !== "배경 효과 없음");
-      update("backgrounds", activeBackgrounds.includes(value)
-        ? activeBackgrounds.filter((item) => item !== value)
-        : [...activeBackgrounds, value]);
-      return;
-    }
-    update(key, data[key].includes(value) ? data[key].filter((item) => item !== value) : [...data[key], value]);
+      const currentValues = previous[key];
+      return { ...previous, [key]: currentValues.includes(value) ? currentValues.filter((item) => item !== value) : [...currentValues, value] };
+    });
   };
   const selectStep = (index: number) => {
     const nextIndex = Math.min(STEPS.length - 1, Math.max(0, index));
@@ -336,8 +568,8 @@ export default function Home() {
         </div>;
       case 3:
         return <div className="form-grid single">
-          <MultiChoice label="포트폴리오에 표시할 영역" values={data.sections} options={SECTION_OPTIONS} other={data.sectionOther} onToggle={(value) => toggle("sections", value)} onOther={(value) => update("sectionOther", value)} onPreviewFocus={() => focusPreview("navigation")} locked={["Competition Journey"]} />
-          <div className="info-note"><b>자동 적용</b><span>선택한 영역만 메뉴와 본문에 포함되고, Competition Journey는 대회 성장 기록을 위해 항상 포함됩니다.</span></div>
+          <SectionOrderEditor values={data.sections} options={SECTION_OPTIONS} other={data.sectionOther} onToggle={(value) => toggle("sections", value)} onOther={(value) => update("sectionOther", value)} onReorder={(values) => update("sections", values)} onPreviewFocus={() => focusPreview("navigation")} />
+          <div className="info-note"><b>실시간 적용</b><span>선택한 순서가 오른쪽 상단 메뉴와 본문 섹션에 똑같이 반영됩니다. Competition Journey는 항상 포함되며 위치는 바꿀 수 있어요.</span></div>
         </div>;
       case 4:
         return <div className="form-grid">
@@ -421,17 +653,17 @@ export default function Home() {
     }
   };
 
+  if (appView === "landing") return <LandingScreen completedCount={completedCount} onShowWorkflow={() => setAppView("workflow")} />;
+  if (appView === "workflow") return <WorkflowScreen onBack={() => setAppView("landing")} onEnterBuilder={() => setAppView("builder")} />;
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-row">
-          <Image className="playwell-logo" src="/playwell-logo.png" alt="playwell" width={151} height={40} priority unoptimized />
-          <div className="brand-divider" />
-          <div><p className="eyebrow">ROBOT PORTFOLIO · GOOGLE STITCH</p><h1>포트폴리오 프롬프트 빌더</h1></div>
-        </div>
+        <BrandLockup />
         <div className="header-center"><span>입력</span><i>→</i><b>실시간 누적 미리보기</b></div>
         <div className="header-actions">
           <span className="save-pill"><span className="save-dot" />{saveStatus}</span>
+          <button type="button" className="workflow-button" onClick={() => setAppView("workflow")}>작업 흐름</button>
           <button type="button" className="reset-button" onClick={reset}>처음부터</button>
           <div className="top-progress" aria-label={`9단계 중 ${completedCount}단계 완료`}><span className="progress-copy"><b>{completedCount}</b> / 9 작성</span><div className="progress-track"><span style={{ width: `${(completedCount / 9) * 100}%` }} /></div></div>
         </div>
