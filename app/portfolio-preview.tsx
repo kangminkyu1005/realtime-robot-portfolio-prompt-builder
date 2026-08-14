@@ -1,0 +1,606 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import { resolveMoodPreset, resolvePortfolioSections } from "./workflow";
+import type { PortfolioData } from "./workflow";
+
+type PreviewProps = {
+  data: PortfolioData;
+  currentStep: number;
+  focusTarget: string;
+  focusRequest: number;
+};
+
+type PreviewTheme = CSSProperties & {
+  "--preview-accent": string;
+  "--preview-accent-soft": string;
+  "--preview-secondary": string;
+};
+
+const HEX_COLORS_PATTERN = /#[0-9a-fA-F]{6}/g;
+const PALETTE_VALUES: Record<string, [string, string, string]> = {
+  "네온 블루 + 다크 네이비": ["#36c9ff", "rgba(54, 201, 255, .16)", "#6477ff"],
+  "민트 + 네이비": ["#56bca7", "rgba(86, 188, 167, .18)", "#2569c0"],
+  "퍼플 + 블루": ["#a875ff", "rgba(168, 117, 255, .17)", "#4da6ff"],
+  "레드 + 블랙": ["#ff625f", "rgba(255, 98, 95, .16)", "#ffb44d"],
+};
+
+const MOOD_CLASSES: Record<string, string> = {
+  "미래 기술형": "mood-future-tech",
+  "밝은 학생형": "mood-bright-student",
+  "깔끔 전문형": "mood-clean-professional",
+  "역동 프로젝트형": "mood-dynamic-project",
+};
+
+const BACKGROUND_CLASSES: Record<string, string> = {
+  "은은한 회로 패턴": "background-circuit",
+  "그라데이션": "background-gradient",
+  "빛나는 포인트": "background-glow",
+  "격자 패턴": "background-grid",
+};
+
+const SKILL_LAYOUT_CLASSES: Record<string, string> = {
+  "아이콘 카드와 배지": "skills-icon-cards",
+  "태그": "skills-tags",
+  "진행도 표시": "skills-progress",
+  "단순 목록": "skills-simple-list",
+};
+
+const SECTION_LOCATIONS: Record<string, { key: string; label: string }> = {
+  About: { key: "about-section", label: "소개" },
+  Experience: { key: "experience-section", label: "경험" },
+  "Competition Journey": { key: "competition-section", label: "대회" },
+  Skills: { key: "skills-section", label: "역량" },
+  "Certifications & Awards": { key: "awards-section", label: "수상" },
+  Education: { key: "education-section", label: "교육" },
+  Portfolio: { key: "projects-section", label: "프로젝트" },
+  Contact: { key: "contact-section", label: "연락처" },
+};
+
+function text(value: string, fallback: string) {
+  return value.trim() || fallback;
+}
+
+function compact(value: string, fallback: string, maxLength = 130) {
+  const resolved = text(value, fallback);
+  return resolved.length > maxLength ? `${resolved.slice(0, maxLength)}…` : resolved;
+}
+
+function previewTheme(data: PortfolioData): PreviewTheme {
+  const customColors = data.customColors.match(HEX_COLORS_PATTERN) ?? [];
+  const fallback = PALETTE_VALUES[data.palette] ?? PALETTE_VALUES["민트 + 네이비"];
+  const accent = customColors[0] ?? fallback[0];
+  const secondary = customColors[1] ?? fallback[2];
+
+  return {
+    "--preview-accent": accent,
+    "--preview-accent-soft": customColors[0] ? `${accent}26` : fallback[1],
+    "--preview-secondary": secondary,
+  };
+}
+
+function previewMoodClasses(data: PortfolioData) {
+  return [MOOD_CLASSES[resolveMoodPreset(data.moods, data.moodOther)]];
+}
+
+function previewBackgroundClasses(data: PortfolioData) {
+  if (!data.backgrounds.length || data.backgrounds.includes("배경 효과 없음")) return ["background-none"];
+  const classes = data.backgrounds.map((background) => BACKGROUND_CLASSES[background]).filter(Boolean);
+  if (data.backgroundOther.trim()) classes.push("background-custom");
+  return classes.length ? classes : ["background-none"];
+}
+
+function previewThemeClass(theme: string) {
+  if (theme === "다크 테마") return "dark";
+  if (theme === "시스템 설정에 따라 변경") return "system";
+  return "light";
+}
+
+function skillLevel(data: PortfolioData, skill: string) {
+  return Math.min(5, Math.max(1, Math.round(data.skillLevels?.[skill] ?? 3)));
+}
+
+function skillGlyph(skill: string, index: number) {
+  if (/Python|Coding|Code|C\b/i.test(skill)) return "</>";
+  if (/Motor|Sensor|Robot/i.test(skill)) return "BOT";
+  if (/AI|Web/i.test(skill)) return "AI";
+  if (/Team|Problem|Presentation|Instruction/i.test(skill)) return "◆";
+  return String(index + 1).padStart(2, "0");
+}
+
+function EmptyValue({ children }: { children: ReactNode }) {
+  return <span className="preview-empty">{children}</span>;
+}
+
+function focusClass(activeTarget: string, key: string) {
+  return activeTarget === key ? "preview-focus" : "";
+}
+
+function sectionClass(activeTarget: string, prefix: string) {
+  return activeTarget.startsWith(prefix) ? "preview-section-current" : "";
+}
+
+function locationLabel(target: string) {
+  if (target === "brand") return "헤더 · 브랜드";
+  if (target === "student-name") return "히어로 · 학생 이름";
+  if (target === "portfolio-name") return "히어로 · 포트폴리오 이름";
+  if (target === "language") return "헤더 · 사용 언어";
+  if (target === "navigation") return "헤더 · 메뉴 구성";
+  if (target === "hero-title") return "히어로 · 첫 화면 제목";
+  if (target === "hero-intro") return "히어로 · 소개 문장";
+  if (target === "about-purpose") return "About · 웹앱 목적";
+  if (target === "about-audience") return "About · 주요 사용자";
+  if (target === "about-intro") return "About · 포트폴리오 소개";
+  if (target === "about-bio") return "About · 자기소개";
+  if (target === "about-goal") return "About · 앞으로의 목표";
+  if (target === "text-policy") return "생성 규칙 · 문구 처리";
+  if (target === "competition-section") return "Competition Journey";
+  if (target.startsWith("competition-") && !/-(name|team|roles|strengths|improvements|review)$/.test(target)) return "Competition Journey · 대회 기록";
+  if (target.includes("-name")) return "Competition Journey · 대회명";
+  if (target.includes("-team")) return "Competition Journey · 팀명";
+  if (target.includes("-roles")) return "Competition Journey · 자신의 역할";
+  if (target.includes("-strengths")) return "Competition Journey · 잘한 점";
+  if (target.includes("-improvements")) return "Competition Journey · 보완할 점";
+  if (target.includes("-review")) return "Competition Journey · 한줄평";
+  if (target === "awards-section" || target.startsWith("award-")) return "Certifications & Awards · 수상 내역";
+  if (target === "skills-section" || target === "skills-list") return "Skills · 기술과 역량";
+  if (target === "projects-section") return "Portfolio 프로젝트";
+  if (target.includes("-technologies")) return "Portfolio · 사용 기술";
+  if (target.includes("-description")) return "Portfolio · 프로젝트 설명";
+  if (target.includes("-image")) return "Portfolio · 이미지 방향";
+  if (target.includes("-link")) return "Portfolio · 연결 링크";
+  if (target.startsWith("project-")) return "Portfolio · 프로젝트 제목";
+  if (target === "competition-layout") return "Competition Journey · 배치";
+  if (target === "skills-layout") return "Skills · 배치";
+  if (target === "projects-layout" || target === "project-action") return "Portfolio · 카드 배치";
+  if (target === "footer" || target.startsWith("contact-")) return "Contact · Footer";
+  if (target === "design-system") return "전체 페이지 · 디자인";
+  return "전체 포트폴리오";
+}
+
+function annotationText(target: string) {
+  if (target === "text-policy") return "이 선택은 화면 문구가 아니라 Stitch가 글을 다루는 생성 규칙에 적용됩니다.";
+  if (target === "design-system") return "선택한 테마·색상·분위기·배경 효과가 미리보기 전체에 적용됩니다.";
+  if (target === "navigation") return "선택한 영역과 순서가 상단 메뉴와 아래 본문 섹션에 똑같이 반영됩니다.";
+  if (target === "overview") return "완성된 포트폴리오를 위에서 아래로 직접 스크롤해 확인할 수 있습니다.";
+  return "";
+}
+
+function HeroSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
+  return (
+    <section
+      className={`portfolio-page-section portfolio-hero ${sectionClass(focusTarget, "hero")}`}
+      data-preview-key="hero"
+    >
+      <div className="hero-copy">
+        <span className={`student-chip ${focusClass(focusTarget, "student-name")}`} data-preview-key="student-name">
+          {text(data.studentName, "ROBOT MAKER")}
+        </span>
+        <span className={`hero-kicker ${focusClass(focusTarget, "portfolio-name")}`} data-preview-key="portfolio-name">
+          {text(data.portfolioName, "MY ROBOT PORTFOLIO")}
+        </span>
+        <h3 className={`preview-hero-title ${focusClass(focusTarget, "hero-title")}`} data-preview-key="hero-title">
+          {text(data.heroTitle, "My Robot and Code Portfolio")}
+        </h3>
+        <p className={focusClass(focusTarget, "hero-intro")} data-preview-key="hero-intro">
+          {compact(data.heroIntro || data.portfolioIntro, "도전하고, 만들고, 개선하며 성장한 과정을 소개합니다.")}
+        </p>
+        <div className="hero-actions" aria-hidden="true">
+          <span>프로젝트 보기</span>
+          <span className="ghost-action">성장 기록</span>
+        </div>
+      </div>
+      <div className="robot-visual" aria-hidden="true">
+        <span className="orbit orbit-one" />
+        <span className="orbit orbit-two" />
+        <div className="robot-head"><i /><i /><b /></div>
+        <div className="robot-body"><span>01</span><span>AI</span></div>
+        <div className="code-card">&lt;build /&gt;<br /><b>robot.portfolio</b></div>
+      </div>
+    </section>
+  );
+}
+
+function AboutSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
+  return (
+    <section
+      className={`portfolio-page-section about-section ${sectionClass(focusTarget, "about")}`}
+      data-preview-key="about-section"
+    >
+      <div className="page-section-heading">
+        <span>ABOUT THE MAKER</span>
+        <h3 className={focusClass(focusTarget, "about-intro")} data-preview-key="about-intro">
+          {text(data.portfolioIntro, "결과뿐 아니라 시도하고 개선한 성장 과정을 보여줍니다")}
+        </h3>
+      </div>
+      <div className="about-layout">
+        <div className={`about-story ${focusClass(focusTarget, "about-bio")}`} data-preview-key="about-bio">
+          <span>MY STORY</span>
+          <p>{compact(data.bio, "로봇을 만들고 코딩하며 배우는 나의 이야기가 이곳에 표시됩니다.", 180)}</p>
+        </div>
+        <div className="about-facts">
+          <article className={focusClass(focusTarget, "about-purpose")} data-preview-key="about-purpose">
+            <i>01</i><span>PORTFOLIO PURPOSE</span>
+            <p>{compact(data.purpose, "이 포트폴리오로 보여주고 싶은 목적", 95)}</p>
+          </article>
+          <article className={focusClass(focusTarget, "about-audience")} data-preview-key="about-audience">
+            <i>02</i><span>FOR WHOM</span>
+            <p>{compact(data.audience, "친구, 선생님, 가족과 대회 관계자", 95)}</p>
+          </article>
+          <article className={focusClass(focusTarget, "about-goal")} data-preview-key="about-goal">
+            <i>03</i><span>MY NEXT GOAL</span>
+            <p>{compact(data.goal, "앞으로 도전하고 싶은 목표", 95)}</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompetitionSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
+  const layoutClass = data.competitionLayout === "카드 그리드"
+    ? "journey-grid"
+    : data.competitionLayout === "세로 목록"
+      ? "journey-list"
+      : "journey-timeline";
+
+  return (
+    <section
+      className={`portfolio-page-section journey-section ${sectionClass(focusTarget, "competition")}`}
+      data-preview-key="competition-section"
+    >
+      <div className="page-section-heading">
+        <span>COMPETITION JOURNEY</span>
+        <h3>결과보다 성장의 과정을 기록합니다</h3>
+        <p>대회에서 맡은 역할, 잘한 점과 다음 도전을 위한 개선점을 함께 보여줍니다.</p>
+      </div>
+      <div className={`journey-preview ${layoutClass} ${focusClass(focusTarget, "competition-layout")}`} data-preview-key="competition-layout">
+        {data.competitions.map((competition, index) => {
+          const base = `competition-${competition.id}`;
+          const roles = [...competition.roles, competition.roleOther].filter(Boolean);
+          return (
+            <article key={competition.id} className={focusTarget === base ? "preview-focus" : ""} data-preview-key={base}>
+              <div className="timeline-dot">{index + 1}</div>
+              <div className="journey-card">
+                <div className="journey-card-head">
+                  <span className={focusClass(focusTarget, `${base}-team`)} data-preview-key={`${base}-team`}>
+                    {text(competition.team, `TEAM ${String(index + 1).padStart(2, "0")}`)}
+                  </span>
+                  <small>COMPETITION {String(index + 1).padStart(2, "0")}</small>
+                </div>
+                <h4 className={focusClass(focusTarget, `${base}-name`)} data-preview-key={`${base}-name`}>
+                  {text(competition.name, "대회명이 여기에 표시됩니다")}
+                </h4>
+                <div className={`role-tags ${focusClass(focusTarget, `${base}-roles`)}`} data-preview-key={`${base}-roles`}>
+                  {roles.length
+                    ? roles.slice(0, 5).map((role) => <i key={role}>{role}</i>)
+                    : <EmptyValue>자신의 역할</EmptyValue>}
+                </div>
+                <div className="growth-grid">
+                  <div className={focusClass(focusTarget, `${base}-strengths`)} data-preview-key={`${base}-strengths`}>
+                    <b>잘한 점</b>
+                    <p>{compact(competition.strengths, "이번 대회에서 잘한 점이 표시됩니다.", 105)}</p>
+                  </div>
+                  <div className={focusClass(focusTarget, `${base}-improvements`)} data-preview-key={`${base}-improvements`}>
+                    <b>다음에 보완할 점</b>
+                    <p>{compact(competition.improvements, "아쉬웠던 점과 개선 방법이 표시됩니다.", 105)}</p>
+                  </div>
+                </div>
+                <blockquote className={focusClass(focusTarget, `${base}-review`)} data-preview-key={`${base}-review`}>
+                  “{compact(competition.review, "이번 대회의 한줄평이 이곳에 표시됩니다.", 110)}”
+                </blockquote>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SkillsSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
+  const skills = [...data.skills, data.skillOther].filter(Boolean);
+  const layoutClass = SKILL_LAYOUT_CLASSES[data.skillLayout] ?? SKILL_LAYOUT_CLASSES["아이콘 카드와 배지"];
+  const skillItems = skills.length ? skills : ["Robot Building", "Coding", "Problem Solving", "Teamwork"];
+  const showProgress = data.skillLayout === "진행도 표시";
+
+  return (
+    <section
+      className={`portfolio-page-section skills-section ${sectionClass(focusTarget, "skills")}`}
+      data-preview-key="skills-section"
+    >
+      <div className="page-section-heading"><span>SKILLS & CAPABILITIES</span><h3>배우고 익힌 기술을 한눈에</h3></div>
+      <div className={`skills-layout skills-only-layout ${focusClass(focusTarget, "skills-layout")}`} data-preview-key="skills-layout">
+        <div className={`skill-cloud ${layoutClass} ${focusClass(focusTarget, "skills-list")}`} data-preview-key="skills-list" data-skill-layout={data.skillLayout}>
+          {skillItems.slice(0, 10).map((skill, index) => {
+            const level = skillLevel(data, skill);
+            return (
+              <span
+                key={`${skill}-${index}`}
+                className={`skill-item ${!skills.length ? "is-placeholder" : ""}`}
+                aria-label={showProgress ? `${skill} 숙련도 ${level}/5단계` : undefined}
+              >
+                <i aria-hidden="true">{skillGlyph(skill, index)}</i>
+                <span className="skill-label"><b>{skill}</b>{showProgress && <small>{level}/5</small>}</span>
+                {showProgress && <span className="skill-meter" aria-hidden="true"><span style={{ width: `${level * 20}%` }} /></span>}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AwardsSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
+  const awards = data.awards.filter((award) => award.competition.trim() || award.result.trim());
+  const visibleAwards = awards.length ? awards : [{ id: "preview", competition: "대회명", result: "수상 결과" }];
+
+  return (
+    <section
+      className={`portfolio-page-section awards-section ${sectionClass(focusTarget, "award")}`}
+      data-preview-key="awards-section"
+    >
+      <div className="page-section-heading"><span>CERTIFICATIONS & AWARDS</span><h3>도전하며 얻은 값진 결과</h3></div>
+      <div className="award-grid">
+        {visibleAwards.slice(0, 6).map((award, index) => (
+          <article
+            key={award.id}
+            className={`${!awards.length ? "is-placeholder" : ""} ${focusClass(focusTarget, `award-${award.id}`)}`}
+            data-preview-key={`award-${award.id}`}
+          >
+            <span className="award-icon" aria-hidden="true">AWD</span>
+            <i>{String(index + 1).padStart(2, "0")}</i>
+            <b>{award.result}</b>
+            <small>{award.competition}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProjectsSection({ data, focusTarget, onOpenProject }: { data: PortfolioData; focusTarget: string; onOpenProject: (projectId: string) => void }) {
+  const columnsClass = data.portfolioColumns.startsWith("데스크톱 4열")
+    ? "project-columns-4"
+    : data.portfolioColumns.startsWith("데스크톱 2열")
+      ? "project-columns-2"
+      : "project-columns-3";
+
+  return (
+    <section
+      className={`portfolio-page-section projects-section ${sectionClass(focusTarget, "project")}`}
+      data-preview-key="projects-section"
+    >
+      <div className="page-section-heading"><span>SELECTED PROJECTS</span><h3>직접 만들고 코딩한 프로젝트</h3></div>
+      <div className={`project-preview-grid ${columnsClass} ${focusClass(focusTarget, "projects-layout")}`} data-preview-key="projects-layout">
+        {data.projects.map((project, index) => {
+          const base = `project-${project.id}`;
+          const opensPopup = data.projectAction === "상세 팝업 열기";
+          const openProject = () => opensPopup && onOpenProject(project.id);
+          const handleProjectKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+            if (!opensPopup || (event.key !== "Enter" && event.key !== " ")) return;
+            event.preventDefault();
+            openProject();
+          };
+          return (
+            <article
+              key={project.id}
+              className={`${focusTarget === base ? "preview-focus" : ""} ${opensPopup ? "project-popup-trigger" : ""}`}
+              data-preview-key={base}
+              role={opensPopup ? "button" : undefined}
+              tabIndex={opensPopup ? 0 : undefined}
+              aria-label={opensPopup ? `${text(project.title, "프로젝트")} 상세 팝업 열기` : undefined}
+              onClick={openProject}
+              onKeyDown={handleProjectKeyDown}
+            >
+              <div className={`project-art art-${(index % 3) + 1} ${focusClass(focusTarget, `${base}-image`)}`} data-preview-key={`${base}-image`}>
+                <span>0{index + 1}</span><i /><i /><b />
+                <small>{compact(project.imageDirection, "ROBOT PROJECT IMAGE", 30)}</small>
+              </div>
+              <div className="project-copy">
+                <span className={focusClass(focusTarget, `${base}-technologies`)} data-preview-key={`${base}-technologies`}>
+                  {text(project.technologies, "ROBOT · CODE")}
+                </span>
+                <h4 className={focusClass(focusTarget, base)}>{text(project.title, "프로젝트 제목")}</h4>
+                <p className={focusClass(focusTarget, `${base}-description`)} data-preview-key={`${base}-description`}>
+                  {compact(project.description, "프로젝트 설명이 이 카드에 실시간으로 표시됩니다.", 100)}
+                </p>
+                {data.projectAction !== "버튼 표시 안 함" && (
+                  <span
+                    className={`project-action ${focusClass(focusTarget, "project-action")}`}
+                    data-preview-key="project-action"
+                  >
+                    {text(data.projectAction, "자세히 보기")} →
+                  </span>
+                )}
+                {project.link && <small className={focusClass(focusTarget, `${base}-link`)} data-preview-key={`${base}-link`}>{project.link}</small>}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function GenericSection({ title, previewKey }: { title: string; previewKey: string }) {
+  return (
+    <section className="portfolio-page-section generic-section" data-preview-key={previewKey}>
+      <div className="page-section-heading"><span>ADDITIONAL SECTION</span><h3>{title}</h3></div>
+      <div className="generic-placeholder"><i /><div><b>{title}</b><span>선택한 영역이 최종 포트폴리오의 독립 섹션으로 생성됩니다.</span></div></div>
+    </section>
+  );
+}
+
+function ContactSection({ data, focusTarget }: { data: PortfolioData; focusTarget: string }) {
+  return (
+    <section className={`portfolio-page-section contact-section ${sectionClass(focusTarget, "contact")}`} data-preview-key="contact-section">
+      <div><span>LET&apos;S CONNECT</span><h3>함께 이야기해요</h3><p>연락처와 포트폴리오 링크가 마지막 섹션에 정리됩니다.</p></div>
+      <div className="contact-links">
+        <span className={focusClass(focusTarget, "contact-email")} data-preview-key="contact-email">{text(data.email, "EMAIL")}</span>
+        <span className={focusClass(focusTarget, "contact-github")} data-preview-key="contact-github">{text(data.githubUrl, "GITHUB")}</span>
+        <span className={focusClass(focusTarget, "contact-web")} data-preview-key="contact-web">{text(data.portfolioUrl, "PORTFOLIO")}</span>
+      </div>
+    </section>
+  );
+}
+
+export default function PortfolioPreview({ data, currentStep, focusTarget, focusRequest }: PreviewProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const orderedSections = resolvePortfolioSections(data);
+  const activeProject = data.projectAction === "상세 팝업 열기"
+    ? data.projects.find((project) => project.id === activeProjectId) ?? null
+    : null;
+  const locatorItems = [
+    { key: "hero", label: "처음" },
+    ...orderedSections.map((section, index) => SECTION_LOCATIONS[section] ?? { key: `custom-section-${index}`, label: section }),
+    { key: "footer", label: "Footer" },
+  ];
+  const annotation = annotationText(focusTarget);
+  const moodPreset = resolveMoodPreset(data.moods, data.moodOther);
+  const canvasClasses = [
+    "portfolio-canvas",
+    previewThemeClass(data.theme),
+    ...previewMoodClasses(data),
+    ...previewBackgroundClasses(data),
+    focusTarget === "design-system" ? "design-focus" : "",
+  ].filter(Boolean).join(" ");
+
+  const scrollToTarget = useCallback((target: string, behavior: ScrollBehavior = "smooth") => {
+    const scroller = scrollRef.current;
+    const canvas = canvasRef.current;
+    if (!scroller || !canvas) return;
+
+    if (["brand", "language", "navigation", "design-system", "overview"].includes(target)) {
+      scroller.scrollTo({ top: 0, behavior });
+      return;
+    }
+
+    const fallbackKey = target.startsWith("competition-")
+      ? "competition-section"
+      : target.startsWith("award-")
+        ? "awards-section"
+        : target.startsWith("skills-")
+          ? "skills-section"
+        : target.startsWith("project-") || target === "projects-layout"
+          ? "projects-section"
+          : target.startsWith("contact-")
+            ? "contact-section"
+            : target.startsWith("about-")
+              ? "about-section"
+              : "hero";
+    const element = canvas.querySelector<HTMLElement>(`[data-preview-key="${target}"]`)
+      ?? canvas.querySelector<HTMLElement>(`[data-preview-key="${fallbackKey}"]`)
+      ?? canvas.querySelector<HTMLElement>(`[data-preview-key="hero"]`);
+    if (!element) return;
+
+    const scrollRect = scroller.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const centeredTop = scroller.scrollTop
+      + elementRect.top
+      - scrollRect.top
+      - Math.max(18, (scroller.clientHeight - Math.min(elementRect.height, scroller.clientHeight * .7)) / 2);
+    scroller.scrollTo({ top: Math.max(0, centeredTop), behavior });
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => scrollToTarget(focusTarget));
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusRequest, focusTarget, scrollToTarget]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => event.key === "Escape" && setActiveProjectId(null);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (data.projectAction === "상세 팝업 열기") return;
+    const timer = window.setTimeout(() => setActiveProjectId(null), 0);
+    return () => window.clearTimeout(timer);
+  }, [data.projectAction]);
+
+  return (
+    <section className="preview-pane" aria-label="실시간 포트폴리오 미리보기">
+      <header className="preview-pane-header">
+        <div><span className="live-indicator"><i /> LIVE PREVIEW</span><h2>완성될 포트폴리오 미리보기</h2><p>입력 내용이 실제 페이지 순서대로 계속 쌓입니다.</p></div>
+        <button type="button" className="preview-location" onClick={() => scrollToTarget(focusTarget)}>
+          <span>현재 입력 위치 · STEP {String(currentStep).padStart(2, "0")}</span>
+          <b>{locationLabel(focusTarget)}</b>
+          <small>위치로 이동 ↘</small>
+        </button>
+      </header>
+
+      <div className="browser-frame">
+        <div className="browser-bar" aria-hidden="true"><div><i /><i /><i /></div><span>portfolio.preview</span><b>↗</b></div>
+        <div
+          ref={canvasRef}
+          className={canvasClasses}
+          style={previewTheme(data)}
+          data-preview-key="design-system"
+          data-mood-preset={moodPreset}
+        >
+          <nav className={`portfolio-navigation ${focusClass(focusTarget, "navigation")}`} data-preview-key="navigation">
+            <div className={`preview-brand ${focusClass(focusTarget, "brand")}`} data-preview-key="brand"><span>R</span><b>{text(data.logoName, "ROBOT.FOLIO")}</b></div>
+            <div className="preview-menu" aria-label="선택한 포트폴리오 메뉴">{orderedSections.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div>
+            <span className={`language-chip ${focusClass(focusTarget, "language")}`} data-preview-key="language">{text(data.language, "KR · EN")}</span>
+          </nav>
+
+          {annotation && <div className="preview-annotation" role="status"><b>적용 안내</b><span>{annotation}</span></div>}
+
+          <div ref={scrollRef} className="portfolio-scroll" aria-label="누적된 포트폴리오 전체 페이지">
+            <HeroSection data={data} focusTarget={focusTarget} />
+            {orderedSections.map((section, index) => {
+              if (section === "About") return <AboutSection key={section} data={data} focusTarget={focusTarget} />;
+              if (section === "Experience") return <GenericSection key={section} title={section} previewKey="experience-section" />;
+              if (section === "Competition Journey") return <CompetitionSection key={section} data={data} focusTarget={focusTarget} />;
+              if (section === "Skills") return <SkillsSection key={section} data={data} focusTarget={focusTarget} />;
+              if (section === "Certifications & Awards") return <AwardsSection key={section} data={data} focusTarget={focusTarget} />;
+              if (section === "Education") return <GenericSection key={section} title={section} previewKey="education-section" />;
+              if (section === "Portfolio") return <ProjectsSection key={section} data={data} focusTarget={focusTarget} onOpenProject={setActiveProjectId} />;
+              if (section === "Contact") return <ContactSection key={section} data={data} focusTarget={focusTarget} />;
+              return <GenericSection key={`${section}-${index}`} title={section} previewKey={`custom-section-${index}`} />;
+            })}
+            <footer className={`preview-footer ${focusClass(focusTarget, "footer")}`} data-preview-key="footer">
+              <span>{text(data.footerText, `© ${text(data.studentName, "Robot Maker")} Portfolio`)}</span>
+              <div>{data.email ? <i>MAIL</i> : null}{data.githubUrl ? <i>GITHUB</i> : null}{data.portfolioUrl ? <i>WEB</i> : null}</div>
+            </footer>
+          </div>
+
+          {activeProject && (
+            <div className="project-detail-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setActiveProjectId(null)}>
+              <section className="project-detail-modal" role="dialog" aria-modal="true" aria-labelledby="project-detail-title">
+                <header>
+                  <div><span>PROJECT DETAIL</span><h3 id="project-detail-title">{text(activeProject.title, "프로젝트 제목")}</h3></div>
+                  <button type="button" onClick={() => setActiveProjectId(null)} aria-label="프로젝트 상세 팝업 닫기">×</button>
+                </header>
+                <div className="project-detail-body">
+                  <div className="project-detail-art" aria-hidden="true"><span>ROBOT PROJECT</span><i /><i /><b /></div>
+                  <div className="project-detail-copy">
+                    <span>사용 기술</span><b>{text(activeProject.technologies, "사용 기술을 입력해 주세요")}</b>
+                    <span>프로젝트 설명</span><p>{text(activeProject.description, "프로젝트 설명을 입력하면 이곳에 표시됩니다.")}</p>
+                    <span>이미지 방향</span><p>{text(activeProject.imageDirection, "프로젝트에 어울리는 로봇 또는 코딩 이미지")}</p>
+                    {activeProject.link && <a href={activeProject.link} target="_blank" rel="noreferrer">프로젝트 링크 열기 ↗</a>}
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <nav className="preview-locator" aria-label="미리보기 위치 바로가기">
+        {locatorItems.map((item) => (
+          <button key={item.key} type="button" onClick={() => scrollToTarget(item.key)} className={focusTarget.startsWith(item.key.split("-")[0]) ? "active" : ""}>
+            <i />{item.label}
+          </button>
+        ))}
+      </nav>
+    </section>
+  );
+}
